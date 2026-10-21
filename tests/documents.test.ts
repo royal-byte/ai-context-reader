@@ -18,3 +18,12 @@ it('reopening the same file preserves progress and stores the file and history a
   expect(filePut).toHaveBeenCalledWith({ id, data });
   expect(metadataPut).toHaveBeenCalledWith(result);
 });
+
+it('does not read or write stored files or progress when persistence is off', async () => {
+  const get = vi.spyOn(readerDb.documents, 'get');
+  const transaction = vi.spyOn(readerDb, 'transaction');
+  const result = await rememberDocument(new ArrayBuffer(0), 'private.pdf', 2, false);
+  expect(result).toMatchObject({ name: 'private.pdf', currentPage: 1, zoom: 'fit' });
+  expect(get).not.toHaveBeenCalled();
+  expect(transaction).not.toHaveBeenCalled();
+});

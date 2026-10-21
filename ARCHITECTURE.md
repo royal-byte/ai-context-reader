@@ -56,3 +56,43 @@
 删除旧详情模态框及其状态/样式。共享收藏列表使用原生 `details/summary`，相同 name 形成单展开组，键盘交互由浏览器处理；收起按钮关闭最近的 details 并将焦点还给 summary。状态操作使用原生 auto Popover，浏览器负责外部点击、Escape 退出和焦点关系，不在 summary 内嵌交互按钮。
 
 状态数量从当前范围的生词计算，不受当前状态筛选重复过滤。`ReaderCard` 按已经校验的解释 mode 显示保存去向，成功反馈仍只在后台保存返回成功后出现。数据模型、API 流程及去重规则不变，无新增依赖。
+
+## v0.3.4 延迟解释
+
+网页和 `Workbench` 共用 `selectionIntent` 识别 mouseup / dblclick：忽略右键和双击的第二次 mouseup，普通拖选仅展示 `SelectionReader` 的按钮。只有双击单词或点击按钮才挂载 `ReaderCard`，从而复用原请求流程，拖选与复制不会发送 analyze 消息。PDF 通过 `PdfPage` 传递原鼠标事件，不再把两种手势都直接打开卡片。
+
+按钮的 pointerdown / mousedown 阻止默认聚焦但不劫持 copy 或 contextmenu；外部关闭复用 `dismissCardOnOutsidePress`，按钮关闭不清除选区，右键对按钮和卡片都不清除选区。Escape 在文档层关闭。按钮额外在滚动和 resize 时关闭，避免选区位置变化后悬空。无新依赖、无数据库迁移、无改动模型限流处理。
+
+## v0.4.0 设置与隐私边界
+
+`reader-preferences` 与 `byol-settings` 分开保存；设置页一次 storage.set 保存两者，取消不写入。配置归一化只接收枚举、布尔和验证后的域名，不向阅读组件传密钥。初次读取失败时不允许发起选区查询；订阅配置变化时关闭旧选区。语言文案由显式 `uiText` 处理，不翻译或改写用户的收藏正文。
+
+`minimalContext` 在网页/PDF、共享卡片、后台及最终 API 层复用：词语仅取所处句子，长句局部窗口最多 1000 字符，句段仅选区。`validateSelection` 在后台/API 入口拒绝空值与超过 3000 字符的数据。来源只用于本机收藏/可选查询历史，不进入模型 messages。后台以实际 sender.url 做站点名单检查，不信任网页声称的来源。名单是应用响应限制，manifest 的既有浏览器权限不变。
+
+Dexie v3 仅新增 `queries: ++id,createdAt`，保留旧表和已有数据。查询历史默认关闭，成功后重新读取开关再记录，事务内裁剪至最近 200 条，避免并发写入覆盖。保存历史失败返回非阻断 warning。PDF 开关关闭时 `rememberDocument(..., false)` 仅生成内存元数据，不读旧进度、不写文件/历史；工作台不自动恢复或更新进度。开关不自动删除既有数据。
+
+保持 BYOL 本机直连，设置页说明客户端风险。官方统一服务密钥的后端代理属于后续公开服务架构，不把个人密钥经过后端描述成天然安全。本次没有引入代理、额外依赖、遥测、后台文章抓取或付费自动回退。
+
+## v0.4.2 服务商兼容
+
+复用 `API_PRESETS`、严格主机名识别、`selectApiProvider` 和原设置表单。新增 OpenRouter、MiniMax 国内/国际的固定端点，旧 MiniMax 国内域名仅用于识别既有配置，默认采用最新官方国内域名，不迁移或转发用户密钥。
+
+共享 `requestExplanation` 根据目标主机发送必要的少量差异参数。OpenRouter 保留 `response_format: json_object`，设置 `provider.require_parameters`，不附带网页 HTTP-Referer 或模型回退列表。MiniMax 使用 `reasoning_split` 与 `max_completion_tokens`，仅默认 M3 关闭思考，M3.1-Flash 使用 low 档；未文档化的 response_format 不发送。两者都只解析最终 content 并复用 `parseExplanation`，不向 UI 暴露 reasoning_content；MiniMax 非零 base_resp 业务码抛出安全错误，不回显原始服务器文本。
+
+数据模型、数据库、后台消息、查询触发与密钥存储不变；没有 SDK、新依赖、自动重试或新增浏览器权限。
+
+## v0.4.3 多语境与 PDF 解释面板
+
+保持 Dexie v3、`items` 的原字段及单行语境，不执行重写旧记录的迁移。`favoriteKey` 对单词使用已返回的 lemma（否则选区），短语使用完整选区；摘录另含语境键。`contextKey` 使用文档 ID/网址、页码和已有原句提取规则。展示层 `groupFavorites` 归组但保留每条原始记录，最早的收藏作为摘要；文档范围先过滤再归组，导出展平所有匹配语境。学习状态在同一词条所有记录上事务更新。
+
+`getFavoriteState` 仅做本机查询，经 `favorite-state` 消息告知卡片 new/context/duplicate。`saveItem` 在读写事务里再次检查，原语境返回 duplicate 而不覆盖，新语境 add 且继承词条状态。当前 O(n) 扫描为保留旧格式的 MVP 简化；未来规模扩大时增加带迁移的词条索引。保存完成但通知失败返回非阻断 warning，避免误报保存失败。
+
+`ReaderCard` 复用同一请求、校验与保存逻辑，新增 popup/panel 展示选项。PDF 的主动查询挂载在右侧；待确认选区仍用轻量按钮，复用 `opensImmediately` 触发规则。侧栏切换、收起使用 hidden 保持卡片，不重新请求；文档/页码/设置变化会清除旧查询。网页保持外部点击关闭，固定解释面板不绑定外部点击关闭。两处都不重复显示原句或分类控件。
+
+词典仅入待办，未新增查询接口、词库、依赖、权限或网络上传。
+
+## v0.4.4 本地词汇关联
+
+复用 `groupFavorites`、`favoriteKey`、`contextKey` 与已有原句提取。`relatedVocabulary` 只消费当前范围的保存记录，将语境按原句分句、按词边界匹配当前词与其他收藏词，原形仅使用已保存值，不做新词形推断。去重使用来源 ID/网址、页码与整理空白的原句，同页后缀重叠保守保留较短文本，避免页眉混入导致计数膨胀；无文本坐标时不承诺精确出现次数。只有同来源时返回双方原句对照，并明确不是共现结论。
+
+关联在当前展开卡片上按需计算，关闭卡片不计算，结果不写入数据库。当前词条×保存原句扫描以及同来源重叠比较适用于 MVP；大库应以本地倒排索引和保存的文本坐标升级。UI 使用已有内联 details 展示依据和已有来源动作，最多展示 5 个关联、每个 3 条共现依据；词条跳转复用原生 accordion，清除筛选、展开并聚焦 summary。单独导航与主题/搭配识别暂不实现，无额外 AI、数据迁移或权限变化。

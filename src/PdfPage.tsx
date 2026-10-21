@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
+import { uiText } from './preferences';
 
-type Props = { pdf: PDFDocumentProxy; pageNumber: number; width: number; zoom: string; onError: (message: string) => void; onSelect: () => void };
+type Props = { pdf: PDFDocumentProxy; pageNumber: number; width: number; zoom: string; onError: (message: string) => void; onSelect: (event: MouseEvent) => void; language?: 'zh-CN' | 'en' };
 
-export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect }: Props) {
+export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, language = 'zh-CN' }: Props) {
+  const t = uiText(language);
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onError });
   callbacks.current = { onError };
@@ -24,7 +26,7 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect }: Pro
       const canvas = document.createElement('canvas');
       canvas.width = Math.ceil(viewport.width * ratio); canvas.height = Math.ceil(viewport.height * ratio);
       canvas.style.width = `${viewport.width}px`; canvas.style.height = `${viewport.height}px`;
-      canvas.setAttribute('aria-label', `PDF 第 ${pageNumber} 页`);
+      canvas.setAttribute('aria-label', t(`PDF 第 ${pageNumber} 页`, `PDF page ${pageNumber}`));
       const layer = document.createElement('div'); layer.className = 'textLayer';
       host.current.style.width = `${viewport.width}px`; host.current.style.height = `${viewport.height}px`;
       host.current.style.setProperty('--total-scale-factor', String(viewport.scale * page.userUnit));
@@ -47,10 +49,10 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect }: Pro
       callbacks.current.onError(error instanceof Error ? `页面加载失败：${error.message}` : '页面加载失败，请重新打开文件。');
     });
     return () => { active = false; renderTask?.cancel(); textLayer?.cancel(); };
-  }, [pdf, pageNumber, width, zoom]);
+  }, [pdf, pageNumber, width, zoom, language]);
   return <div className="pdf-stage">
-    {loading && <div className="page-loading" role="status">正在绘制页面…</div>}
+    {loading && <div className="page-loading" role="status">{t('正在绘制页面…', 'Rendering page…')}</div>}
     <div ref={host} className="pdf-paper" onMouseUp={onSelect} onDoubleClick={onSelect} />
-    {empty && <p className="scan-notice">此页未检测到可选择文字，可能是扫描页。首版暂不支持 OCR。</p>}
+    {empty && <p className="scan-notice">{t('此页未检测到可选择文字，可能是扫描页。首版暂不支持 OCR。', 'No selectable text found. This may be a scanned page; OCR is not supported yet.')}</p>}
   </div>;
 }

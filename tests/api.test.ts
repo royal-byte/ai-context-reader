@@ -18,7 +18,7 @@ describe('provider support', () => {
     expect(body.messages[1].content).toContain(`Reading mode: ${mode}`);
     expect(body.max_tokens).toBe(mode === 'paragraph' ? 2048 : 1024);
   });
-  it.each(['openai', 'glm', 'deepseek'] as const)('requests and parses %s explanations', async (provider) => {
+  it.each(['openai', 'glm', 'deepseek', 'openrouter', 'minimax', 'minimaxIntl'] as const)('requests and parses %s explanations', async (provider) => {
     const fetchMock = vi.fn().mockResolvedValue(response());
     vi.stubGlobal('fetch', fetchMock);
     const settings = { ...selectApiProvider(provider), apiKey: 'test-only-key' };
@@ -29,9 +29,15 @@ describe('provider support', () => {
     expect(init.redirect).toBe('error');
     const body = JSON.parse(init.body);
     expect(body.model).toBe(API_PRESETS[provider].model);
-    expect(body.response_format).toEqual({ type: 'json_object' });
+    const minimax = provider === 'minimax' || provider === 'minimaxIntl';
+    expect(body.response_format).toEqual(minimax ? undefined : { type: 'json_object' });
+    expect(body.reasoning_split).toBe(minimax ? true : undefined);
+    expect(body.provider).toEqual(provider === 'openrouter' ? { require_parameters: true } : undefined);
+    expect(body.max_completion_tokens).toBe(minimax ? 1024 : undefined);
+    expect(body.max_tokens).toBe(minimax ? undefined : 1024);
     expect(body.messages[1].content).toContain('A resilient system recovers.');
-    expect(body.thinking).toEqual(provider === 'openai' ? undefined : { type: 'disabled' });
+    expect(body.thinking).toEqual(['openai', 'openrouter'].includes(provider) ? undefined : { type: 'disabled' });
+    expect(init.headers).not.toHaveProperty('HTTP-Referer');
     expect(body.stream).toBe(false);
   });
 
@@ -43,6 +49,12 @@ describe('provider support', () => {
     expect(providerForEndpoint('https://open.bigmodel.cn/api/paas/v4/chat/completions')).toBe('glm');
     expect(providerForEndpoint('https://api.deepseek.com/v1')).toBe('deepseek');
     expect(providerForEndpoint('https://api.deepseek.com.other.example/v1')).toBe('custom');
+    expect(providerForEndpoint('https://openrouter.ai/api/v1/chat/completions')).toBe('openrouter');
+    expect(providerForEndpoint('https://openrouter.ai.evil.example/api/v1')).toBe('custom');
+    expect(providerForEndpoint('https://api.minimax.cn/v1')).toBe('minimax');
+    expect(providerForEndpoint('https://api.minimaxi.com/v1')).toBe('minimax');
+    expect(providerForEndpoint('https://api.minimax.io/v1')).toBe('minimaxIntl');
+    expect(providerForEndpoint('https://api.minimax.io.evil.example/v1')).toBe('custom');
     expect(providerForEndpoint('unfinished')).toBe('custom');
   });
 
@@ -54,6 +66,33 @@ describe('provider support', () => {
     const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
     expect(body.model).toBe('my-model');
     expect(body).not.toHaveProperty('thinking');
+  });
+
+  it.each(['MiniMax-M3.1-Flash', 'MiniMax-M2.7'])('separates reasoning without trying to disable mandatory thinking (%s)', async (model) => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ base_resp: { status_code: 0 }, choices: [{ message: { reasoning_content: 'Private reasoning, not a JSON answer.', content: JSON.stringify(explanation) }, finish_reason: 'stop' }] })));
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await requestExplanation({ ...selectApiProvider('minimax'), model, apiKey: 'test-only-key' }, 'resilient', 'A resilient system recovers.')).toEqual(explanation);
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body.reasoning_split).toBe(true);
+    expect(body).not.toHaveProperty('thinking');
+    expect(body).not.toHaveProperty('response_format');
+    expect(body.reasoning_effort).toBe(model === 'MiniMax-M3.1-Flash' ? 'low' : undefined);
+    expect(body.max_completion_tokens).toBe(4096);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('reports MiniMax business failures inside HTTP 200 without exposing server text', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ base_resp: { status_code: 1004, status_msg: 'do not echo test-only-key' } }))));
+    const task = requestExplanation({ ...selectApiProvider('minimax'), apiKey: 'test-only-key' }, 'resilient', 'context');
+    await expect(task).rejects.toThrow('业务码 1004');
+    await expect(task).rejects.not.toThrow('test-only-key');
+  });
+
+  it('explains incompatible OpenRouter model routes and does not silently retry or switch models', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response('private server details', { status: 404 }));
+    vi.stubGlobal('fetch', fetchMock);
+    await expect(requestExplanation({ ...selectApiProvider('openrouter'), apiKey: 'test-only-key' }, 'resilient', 'context')).rejects.toThrow('支持 JSON 输出');
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 });
 

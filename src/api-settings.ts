@@ -4,6 +4,9 @@ export const API_PRESETS = {
   openai: { label: 'OpenAI', endpoint: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
   glm: { label: 'GLM（智谱）', endpoint: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4.7' },
   deepseek: { label: 'DeepSeek', endpoint: 'https://api.deepseek.com', model: 'deepseek-flash' },
+  openrouter: { label: 'OpenRouter', endpoint: 'https://openrouter.ai/api/v1', model: 'openai/gpt-4o-mini' },
+  minimax: { label: 'MiniMax（国内）', endpoint: 'https://api.minimax.cn/v1', model: 'MiniMax-M3' },
+  minimaxIntl: { label: 'MiniMax（国际）', endpoint: 'https://api.minimax.io/v1', model: 'MiniMax-M3' },
   custom: { label: '自定义兼容接口', endpoint: '', model: '' }
 };
 export type ApiProvider = keyof typeof API_PRESETS;
@@ -18,6 +21,9 @@ export function providerForEndpoint(endpoint: string): ApiProvider {
     if (hostname === 'api.openai.com') return 'openai';
     if (hostname === 'open.bigmodel.cn') return 'glm';
     if (hostname === 'api.deepseek.com') return 'deepseek';
+    if (hostname === 'openrouter.ai') return 'openrouter';
+    if (['api.minimax.cn', 'api.minimaxi.com'].includes(hostname)) return 'minimax';
+    if (hostname === 'api.minimax.io') return 'minimaxIntl';
   } catch { /* An unfinished custom address remains editable. */ }
   return 'custom';
 }

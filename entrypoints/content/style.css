@@ -1,4 +1,10 @@
 :host { all: initial; }
+.acr-selection-tools { all: initial; position: fixed; z-index: 2147483647; display: grid; justify-items: start; gap: 8px; max-width: min(320px, calc(100vw - 24px)); color-scheme: light; }
+.acr-selection-notice { margin: 0; padding: 12px 14px; border: 1px solid #dce2d4; border-radius: 9px; background: #fff; color: #344c3c; box-shadow: 0 3px 12px #18271f26; font: 14px/1.7 'Segoe UI', 'Microsoft YaHei', sans-serif; overflow-wrap: anywhere; }
+.acr-selection-notice span { display: block; color: #667064; font-size: 12px; }
+.acr-explain { all: initial; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; min-width: 64px; min-height: 36px; padding: 7px 14px; border: 1px solid #315a46; border-radius: 9px; background: #315a46; color: #fff; box-shadow: 0 3px 12px #18271f26; font: 600 14px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif; cursor: pointer; color-scheme: light; }
+.acr-explain:hover { background: #244936; }
+.acr-explain:focus-visible { outline: 2px solid #28735a; outline-offset: 3px; }
 .acr-card { --acr-text: #252a29; --acr-muted: #6b726f; --acr-line: #e7ebe8; --acr-accent: #28735a; position: fixed; z-index: 2147483647; display: flex; flex-direction: column; width: 380px; max-width: calc(100vw - 24px); max-height: min(560px, calc(100dvh - 24px)); box-sizing: border-box; color: var(--acr-text); background: #fff; border: 1px solid var(--acr-line); border-radius: 16px; box-shadow: 0 14px 48px #18271f26, 0 2px 8px #18271f0a; font: 14px/1.65 'Segoe UI', 'Microsoft YaHei', sans-serif; text-align: left; color-scheme: light; }
 .acr-card * { box-sizing: border-box; }
 .acr-card button, .acr-card summary { font: inherit; cursor: pointer; }
@@ -32,6 +38,8 @@
 .acr-save:hover:not(:disabled) { background: #244936; }
 .acr-save:disabled { background: #edf3ee; color: #42644d; cursor: default; }
 .acr-footer .acr-save-hint { margin: 10px 0 0; color: #626e66; text-align: center; font-size: 12px; line-height: 1.6; }
+.acr-footer .acr-save-status { margin: 0 0 9px; color: #315a46; font-size: 13px; line-height: 1.6; }
+.acr-save-status:empty { display: none; }
 .acr-loading { color: var(--acr-muted); padding: 12px 2px 20px; font-size: 13px; }
 .acr-demo { color: var(--acr-muted); font-size: 11px; padding: 0 3px 10px; }
 .acr-error { color: #984a42; padding: 10px 2px; font-size: 13px; }

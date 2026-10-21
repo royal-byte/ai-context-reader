@@ -39,6 +39,7 @@ export type ReadingDocument = {
   zoom: string; createdAt: number; lastOpenedAt: number;
 };
 export type DocumentFile = { id: string; data: ArrayBuffer };
+export type QueryHistory = { id?: number; text: string; sourceUrl: string; sourceTitle: string; pageNumber?: number; createdAt: number };
 
 export type ApiSettings = { endpoint: string; apiKey: string; model: string };
 

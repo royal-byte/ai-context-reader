@@ -31,7 +31,7 @@ export function parseExplanation(input: string, mode?: ReadingMode): Explanation
   return result;
 }
 
-export function demoExplanation(text: string, context: string, mode: ReadingMode = inferReadingMode(text)): Explanation {
+export function demoExplanation(text: string, context: string, mode: ReadingMode = inferReadingMode(text), language: 'zh-CN' | 'en' = 'zh-CN'): Explanation {
   const sample = /\bundermine\b/i.test(text) && /the strategy could undermine profitability/i.test(sourceSentence(text, context));
   const result: Explanation = { definition: '连接模型后显示准确释义', translation: '连接模型后显示自然翻译', explanation: '这里将结合原句，解释所选内容的具体含义。', examples: [], register: 'demo' };
   if (sample) {
@@ -45,5 +45,15 @@ export function demoExplanation(text: string, context: string, mode: ReadingMode
   if (mode === 'phrase') result.usage = sample ? 'undermine + 名词：表示逐步削弱某种能力、基础或信心。' : '连接模型后显示整体用法与常见搭配。';
   if (mode === 'sentence') result.structure = sample ? ['主语：The strategy（这项策略）', '谓语：could undermine（可能削弱）', '宾语：profitability（盈利能力）'] : ['连接模型后显示主干、从句与关键修饰。'];
   if (mode === 'paragraph') result.keyPoints = sample ? ['策略对盈利能力的影响', 'could 表示可能性，而非已经发生'] : ['连接模型后显示段落要点与论证关系。'];
+  if (language === 'en') {
+    result.definition = sample ? 'Gradually weaken or damage.' : 'Connect a model for an accurate definition.';
+    result.translation = sample ? 'The strategy may gradually damage profitability.' : 'Connect a model for a natural translation.';
+    result.explanation = sample ? 'This suggests a gradual loss of profitability, not necessarily an immediate loss.' : 'The model will explain the selected text in its context.';
+    if (result.partOfSpeech) result.partOfSpeech = sample ? 'v.' : '';
+    if (result.usage) result.usage = sample ? 'undermine + noun: gradually weaken an ability, foundation, or confidence.' : 'Connect a model for usage notes.';
+    if (result.structure) result.structure = ['Connect a model for sentence structure notes.'];
+    if (result.keyPoints) result.keyPoints = ['Connect a model for key points.'];
+    if (result.sentenceTranslation) result.sentenceTranslation = result.translation;
+  }
   return result;
 }

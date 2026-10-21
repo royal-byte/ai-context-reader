@@ -35,3 +35,24 @@ it.each([
   const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'ambiguous', context: 'context', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
   expect(markup).toContain(label);
 });
+
+it.each([
+  ['context', '', '已收藏，可新增本次语境', '保存本次语境'],
+  ['duplicate', '', '此语境已保存', '✓ 此语境已保存'],
+  ['context', 'context-added', '本次语境已保存', '✓ 已保存本次语境']
+])('gives distinct feedback for existing=%s, saved=%s', (existing, saved, notice, button) => {
+  state.values = [{ mode: 'word', definition: '释义', translation: '翻译', explanation: '解释', examples: [] }, false, false, saved, '', 0, existing, false];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'word', context: 'Word in context.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain(notice); expect(markup).toContain(button);
+  expect(markup).toContain('role="status"');
+  const save = markup.match(/<button class="acr-save"[^>]*>/)![0];
+  expect(save.includes('disabled')).toBe(existing === 'duplicate' || Boolean(saved));
+});
+
+it('does not promise a nonexistent dictionary fallback when AI fails', () => {
+  state.values = [undefined, false, false, '', 'API 请求失败（429）。', 0];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'word', context: 'context', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('AI 解释暂时不可用，请重试。');
+  expect(markup).toContain('查看原因'); expect(markup).toContain('429');
+  expect(markup).not.toContain('标准词典结果仍可查看');
+});

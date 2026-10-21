@@ -3,7 +3,16 @@
 .settings-form h2 { font: 600 28px/1.4 'Segoe UI', 'Microsoft YaHei', sans-serif; margin: 0 0 16px; }
 .settings-form > p { font-size: 16px; line-height: 1.8; color: #596453; }
 .settings-form label { display: block; margin: 24px 0; font-size: 15px; font-weight: 600; }
-.settings-form input, .settings-form select { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 11px; border: 1px solid #dce2d4; border-radius: 7px; background: #fff; color: #2b302c; font: inherit; }
+.settings-form input, .settings-form select, .settings-form textarea { width: 100%; max-width: 100%; box-sizing: border-box; margin-top: 8px; padding: 11px; border: 1px solid #dce2d4; border-radius: 7px; background: #fff; color: #2b302c; font: inherit; }
+.settings-group { border-top: 1px solid #dce2d4; margin-top: 28px; padding-top: 24px; }
+.settings-group h3, .settings-group > summary { font-size: 19px; font-weight: 600; color: #2b302c; }
+.settings-group > summary { cursor: pointer; }
+.settings-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.settings-form .setting-check { display: flex; align-items: flex-start; gap: 10px; line-height: 1.7; margin-bottom: 8px; }
+.settings-form .setting-check input { width: 18px; height: 18px; flex-shrink: 0; margin-top: 4px; accent-color: #315a46; }
+.settings-form .security-note, .settings-form .privacy-note { border-radius: 9px; padding: 14px 16px; background: #edf4ee; color: #344c3c; font-size: 14px; line-height: 1.8; }
+.settings-form textarea { resize: vertical; }
+@media (max-width: 560px) { .settings-form { padding: 24px 16px; } .settings-columns { grid-template-columns: 1fr; gap: 0; } .settings-form select { font-size: 14px; } }
 .settings-form input[readonly] { background: #f0f3eb; color: #596453; }
 .settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
 .settings-form .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 20px; }

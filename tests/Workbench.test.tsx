@@ -2,6 +2,8 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it, vi } from 'vitest';
 import { Workbench } from '../src/Workbench';
 import type { CollectionKind, ReaderItem } from '../src/types';
+import { DEFAULT_PREFERENCES } from '../src/preferences';
+import { favoriteKey } from '../src/library';
 
 const state = vi.hoisted(() => ({ values: [] as unknown[] }));
 vi.mock('react', async (original) => ({
@@ -12,9 +14,10 @@ vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn(), Te
 
 const word: ReaderItem = { id: 1, uniqueKey: 'word', selectedText: 'undermine', lemma: 'undermine', kind: 'vocabulary', partOfSpeech: '动词', phonetic: '/ˌʌn.dɚˈmaɪn/', definition: '逐渐削弱', translation: '这项策略可能会削弱盈利能力。', explanation: '上下文释义', examples: [], context: 'source sentence', sourceTitle: 'Reading notes', sourceUrl: 'https://example.com', createdAt: 1 };
 
-function render(view: 'reading' | 'library' | 'history', items: ReaderItem[] = [], kind: CollectionKind = 'vocabulary', query = '') {
+function render(view: 'reading' | 'library' | 'history', items: ReaderItem[] = [], kind: CollectionKind = 'vocabulary', query = '', relatedFor?: ReaderItem) {
   // Match Workbench state initialization; effects are intentionally not run by server rendering.
   state.values = [view, false, true, true, items, [], undefined, undefined, 1, 'fit', 900, false, '', undefined, kind, 'all', 'all', query];
+  if (relatedFor) state.values.push(DEFAULT_PREFERENCES, true, [], undefined, 'library', favoriteKey(relatedFor));
   return renderToStaticMarkup(<Workbench />);
 }
 
@@ -50,7 +53,7 @@ it('keeps source information inside the native inline accordion and exports from
 });
 
 it('uses one native accordion group for all cards and counts legacy and current learning states', () => {
-  const markup = render('library', [word, { ...word, id: 2, status: 'mastered' }]);
+  const markup = render('library', [word, { ...word, id: 2, selectedText: 'clarity', lemma: 'clarity', status: 'mastered' }]);
   expect(markup.match(/name="reader-collection"/g)).toHaveLength(2);
   const filters = markup.match(/class="status-tabs"[\s\S]*?<\/div>/)?.[0];
   expect(filters).toContain('全部 <span>2</span>');
@@ -70,4 +73,55 @@ it('distinguishes no search results from an empty collection', () => {
   const markup = render('library', [word], 'vocabulary', 'no-matches');
   expect(markup).toContain('清除筛选');
   expect(markup).not.toContain('去阅读');
+});
+
+it('uses the full product name in the workspace brand', () => {
+  expect(render('reading')).toContain('class="brand-label">AI Context Reader<small>');
+});
+
+it('keeps PDF source name and page in inline details with an explicit return action', () => {
+  const markup = render('library', [{ ...word, sourceTitle: 'Original article.pdf', sourceUrl: 'local-pdf:file-hash', documentId: 'file-hash', pageNumber: 7 }]);
+  const summary = markup.match(/<summary[\s\S]*?<\/summary>/)?.[0];
+  expect(summary).not.toContain('Original article.pdf');
+  expect(markup).toContain('Original article.pdf');
+  expect(markup).toContain('页码 7');
+  expect(markup).toContain('回到原文 ↗');
+});
+
+it('shows one word card with both original contexts and return actions', () => {
+  const markup = render('library', [word, { ...word, id: 2, context: 'Second source sentence.', sourceTitle: 'Second.pdf', sourceUrl: 'local-pdf:second', documentId: 'second', pageNumber: 9 }]);
+  expect(markup.match(/name="reader-collection"/g)).toHaveLength(1);
+  expect(markup).toContain('已保存语境');
+  expect(markup).toContain('source sentence'); expect(markup).toContain('Second source sentence.');
+  expect(markup.match(/回到原文 ↗/g)).toHaveLength(2);
+  expect(markup).toContain('页码 9');
+});
+
+it('renders an explanation in the PDF sidebar without a floating dialog or selection/classification card', () => {
+  state.values = ['reading', false, true, true, [], [], undefined, undefined, 1, 'fit', 900, false, '', undefined, 'vocabulary', 'all', 'all', '', DEFAULT_PREFERENCES, true, [], { text: 'undermine', context: 'The strategy could undermine profitability.', sourceUrl: 'local-pdf:doc', sourceTitle: 'doc.pdf', documentId: 'doc', pageNumber: 1 }, 'explanation'];
+  const markup = renderToStaticMarkup(<Workbench />);
+  expect(markup).toContain('aria-label="阅读侧栏"');
+  expect(markup).toContain('acr-card acr-panel');
+  expect(markup).not.toContain('role="dialog"');
+  expect(markup).not.toContain('The strategy could undermine profitability.');
+  expect(markup).toContain('正在结合上下文理解');
+});
+
+it('keeps evidence-backed related vocabulary inside the expanded word details', () => {
+  const target = { ...word, context: 'The strategy could undermine profitability.', sourceSentence: 'The strategy could undermine profitability.' };
+  const profitability = { ...target, id: 2, selectedText: 'profitability', lemma: 'profitability', definition: '盈利能力' };
+  const markup = render('library', [target, profitability], 'vocabulary', '', target);
+  expect(markup).toContain('aria-label="相关词汇"');
+  expect(markup).toContain('共同原句 1'); expect(markup).toContain('查看词条 profitability');
+  expect(markup).toContain('查看依据'); expect(markup).toContain('不代表通用搭配或同一专业主题');
+  expect(markup.match(/class="related-vocabulary"/g)).toHaveLength(1);
+  expect(markup).not.toContain('>词汇联系<');
+});
+
+it('labels source-only suggestions honestly and gives an evidence-free state without invented words', () => {
+  const other = { ...word, id: 2, selectedText: 'clarity', lemma: 'clarity', context: 'Clarity matters.' };
+  const markup = render('library', [word, other], 'vocabulary', '', word);
+  expect(markup).toContain('同一来源'); expect(markup).not.toContain('共同原句');
+  expect(markup).toContain('不表示在同一句出现');
+  expect(render('library', [word], 'vocabulary', '', word)).toContain('暂未找到有依据的相关词');
 });
