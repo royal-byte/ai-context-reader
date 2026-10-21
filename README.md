@@ -11,6 +11,19 @@
 3. 在 Edge 打开 `edge://extensions`（Chrome 则是 `chrome://extensions`），开启“开发者模式”。
 4. 点击“加载已解压的扩展程序”，选择本项目的 `.output/chrome-mv3` 文件夹。
 
+## CI
+
+`docs/ci.yml` 是现成的 GitHub Actions 工作流模板（typecheck → test → build → zip）。当前推送 token 没有 `workflow` scope，所以没有自动放进 `.github/workflows/`。授权后执行：
+
+```powershell
+gh auth refresh -s workflow
+New-Item -ItemType Directory -Force .github/workflows
+Copy-Item docs/ci.yml .github/workflows/ci.yml
+git add .github/workflows/ci.yml
+git commit -m "ci: enable workflow"
+git push
+```
+
 ## 使用
 
 - 网页：双击单词直接解释；拖选文字（包括单词、短语、句子、段落）只显示小巧的“解释”按钮，点击后才打开卡片并请求模型。只是复制时，照常按 Ctrl+C 或右键复制，不调用模型。按钮不抢焦点或清除选区；点击其他地方、按 Escape 或滚动页面可关闭按钮。浅色弹窗只展示释义、上下文解释及中文翻译，不重复英文原句，也不显示分类标签或切换栏。点击卡片外部即可关闭。
