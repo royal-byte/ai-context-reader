@@ -14,10 +14,10 @@ vi.mock('pdfjs-dist', () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn(), Te
 
 const word: ReaderItem = { id: 1, uniqueKey: 'word', selectedText: 'undermine', lemma: 'undermine', kind: 'vocabulary', partOfSpeech: '动词', phonetic: '/ˌʌn.dɚˈmaɪn/', definition: '逐渐削弱', translation: '这项策略可能会削弱盈利能力。', explanation: '上下文释义', examples: [], context: 'source sentence', sourceTitle: 'Reading notes', sourceUrl: 'https://example.com', createdAt: 1 };
 
-function render(view: 'reading' | 'library' | 'history', items: ReaderItem[] = [], kind: CollectionKind = 'vocabulary', query = '', relatedFor?: ReaderItem) {
+function render(view: 'reading' | 'library' | 'history', items: ReaderItem[] = [], kind: CollectionKind = 'vocabulary', query = '', relatedFor?: ReaderItem, pendingRestore?: { name: string; items: ReaderItem[] }) {
   // Match Workbench state initialization; effects are intentionally not run by server rendering.
   state.values = [view, false, true, true, items, [], undefined, undefined, 1, 'fit', 900, false, '', undefined, kind, 'all', 'all', query];
-  if (relatedFor) state.values.push(DEFAULT_PREFERENCES, true, [], undefined, 'library', favoriteKey(relatedFor));
+  if (relatedFor || pendingRestore) state.values.push(DEFAULT_PREFERENCES, true, [], undefined, 'library', relatedFor && favoriteKey(relatedFor), pendingRestore, false);
   return renderToStaticMarkup(<Workbench />);
 }
 
@@ -32,6 +32,24 @@ it('offers reading instead of an empty export action when the library is empty',
   expect(markup).toContain('去阅读');
   expect(markup).not.toContain('导出当前列表');
   expect(markup).not.toContain('export-button');
+});
+
+it('offers backup restore even for an empty library without promising to restore keys or PDFs', () => {
+  const markup = render('library');
+  expect(markup).toContain('备份与恢复');
+  expect(markup).toContain('恢复备份…');
+  expect(markup).toContain('仅收藏与原句，不含 API Key 或 PDF 文件。');
+  expect(markup).toContain('accept="application/json,.json"');
+});
+
+it('previews merge counts and requires confirmation, with an explicit cancel action', () => {
+  const markup = render('library', [word], 'vocabulary', '', undefined, { name: 'backup.json', items: [word, { ...word, context: 'Another context.' }] });
+  expect(markup).toContain('恢复备份预览');
+  expect(markup).toContain('预计新增 1 条、跳过 1 条重复内容');
+  expect(markup).toContain('不覆盖已有收藏和学习状态');
+  expect(markup).toContain('本机缺少的 PDF 需要重新打开');
+  expect(markup).toContain('确认恢复');
+  expect(markup).toContain('取消，不恢复');
 });
 
 it('keeps source information inside the native inline accordion and exports from the header', () => {

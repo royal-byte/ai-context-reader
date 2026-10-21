@@ -76,6 +76,13 @@
 .item-more { position: absolute; right: 10px; top: 10px; width: 36px; height: 36px; border: 0; border-radius: 7px; background: transparent; color: #667064; font-size: 22px; line-height: 1; } .item-more:hover { background: #edf1e7; color: #2b302c; }
 .item-menu { position: fixed; inset: auto; margin: 0; width: 208px; max-width: calc(100vw - 24px); padding: 8px; border: 1px solid #d4ddce; border-radius: 12px; background: #fff; color: #2b302c; box-shadow: 0 8px 30px #23301f26; }
 .item-menu p { margin: 6px 8px 8px; font-size: 12px; color: #667064; } .item-menu button { display: block; width: 100%; min-height: 42px; padding: 8px 12px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; font-size: 15px; } .item-menu button:hover, .item-menu button[aria-pressed='true'] { background: #edf3e8; color: #315a46; }
+.backup-menu { width: 280px; } .backup-menu p { line-height: 1.7; }
+.restore-preview { margin-bottom: 24px; padding: 22px 24px; border: 1px solid #cad9c9; border-radius: 12px; background: #f0f6ee; color: #344c3c; }
+.restore-preview h2 { font-size: 21px; line-height: 1.5; }
+.restore-preview p { margin-top: 12px; font-size: 15px; line-height: 1.8; overflow-wrap: anywhere; }
+.restore-preview .restore-filename { color: #667064; font-size: 13px; }
+.restore-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 20px; }
+.restore-actions > button:not(.primary-button) { min-height: 44px; padding: 10px 18px; border: 1px solid #cbd5c6; border-radius: 8px; background: #fff; color: #36543d; }
 .inline-detail { margin: 0 20px; border-top: 1px solid #e1e5dc; padding: 20px 0; overflow-wrap: anywhere; } .inline-detail h3 { margin: 20px 0 7px; color: #667064; font-size: 14px; font-weight: 600; } .inline-detail h3:first-child { margin-top: 0; } .inline-detail > p { font-size: 16px; line-height: 1.8; color: #42513e; } .inline-detail blockquote { margin: 0; padding: 12px 14px; border-left: 2px solid #b9c9ab; background: #f5f8f0; color: #42513e; font: 17px/1.8 Georgia, 'Microsoft YaHei', serif; }
 .detail-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px; } .detail-actions button { min-height: 40px; padding: 8px 14px; border: 1px solid #cbd5c6; border-radius: 7px; background: #fff; color: #36543d; font-size: 14px; }
 .item-source { margin-top: 12px; color: #667064; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }

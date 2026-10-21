@@ -13,6 +13,7 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
   const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
   const [allowedSites, setAllowedSites] = useState('');
   const [blockedSites, setBlockedSites] = useState('');
+  const [testNotice, setTestNotice] = useState('');
   const t = uiText(preferences.uiLanguage);
   useEffect(() => {
     chrome.storage.local.get([SETTINGS_KEY, PREFERENCES_KEY]).then((stored) => {
@@ -27,13 +28,13 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
     const value = event.target.value;
     // Changing a destination must not carry a different provider's credential along.
     setSettings({ ...settings, [field]: value, ...(field === 'endpoint' ? { apiKey: '' } : {}) });
-    setNotice('');
+    setNotice(''); setTestNotice('');
   };
   const switchProvider = (event: ChangeEvent<HTMLSelectElement>) => {
     const selected = event.target.value as ApiProvider;
     setProvider(selected);
     setSettings(selectApiProvider(selected));
-    setNotice(t('请填写此服务商的 API 密钥，再测试连接并保存。', 'Enter this provider’s key, then test and save.'));
+    setNotice(''); setTestNotice(t('请填写此服务商的 API 密钥，再测试连接并保存。', 'Enter this provider’s key, then test and save.'));
   };
   const save = async () => {
     setBusy(true); setNotice(t('正在保存…', 'Saving…'));
@@ -45,11 +46,11 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
     finally { setBusy(false); }
   };
   const test = async () => {
-    setBusy(true); setNotice(t('正在测试连接与解释格式…', 'Testing connection and response format…'));
+    setBusy(true); setTestNotice(t('正在测试连接与解释格式…', 'Testing connection and response format…'));
     try {
       const result = await chrome.runtime.sendMessage({ type: 'test-api', settings });
-      setNotice(result?.ok ? t('连接和解释格式正常。点击“保存并返回”后生效。', 'Connection and response format are valid. Save to apply.') : result?.error ?? t('测试失败，请重试。', 'Test failed. Please try again.'));
-    } catch { setNotice('扩展连接中断，请重新加载扩展后重试。'); }
+      setTestNotice(result?.ok ? t('连接和解释格式正常。点击“保存并返回”后生效。', 'Connection and response format are valid. Save to apply.') : result?.error ?? t('测试失败，请重试。', 'Test failed. Please try again.'));
+    } catch { setTestNotice(t('扩展连接中断，请重新加载扩展后重试。', 'Extension disconnected. Reload it and try again.')); }
     finally { setBusy(false); }
   };
   return <section className="settings-form" lang={preferences.uiLanguage} aria-label={t('阅读设置', 'Reader settings')}>
@@ -76,7 +77,7 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
         <label>{t('API 密钥', 'API key')}<input type="password" value={settings.apiKey} onChange={change('apiKey')} placeholder={t('粘贴此服务商的 API 密钥', 'Paste this provider’s API key')} autoComplete="off" spellCheck={false} /></label>
         <p className="security-note">{t('密钥仅保存在本机扩展存储中，不随收藏导出。客户端密钥不能视为绝对安全；请勿在不可信设备使用，并可随时在服务商平台撤销。当前为自带密钥直连模式。', 'Keys stay in local extension storage and are excluded from exports. Client-side keys are not absolutely secure. Avoid untrusted devices and revoke keys at your provider when needed. This version connects directly using your key.')}</p>
         <p className="hint">{t('公开版若提供官方统一密钥，必须通过后端代理，不能把密钥打包进插件；个人密钥经后端也不天然更安全。', 'A public version offering a shared service key must use a backend proxy, never bundle that key. Routing personal keys through a backend is not automatically safer.')}</p>
-        <button onClick={test} disabled={!settings.apiKey.trim() || !settings.endpoint.trim() || !settings.model.trim()}>{t('测试连接', 'Test connection')}</button>
+        <div className="settings-test-row"><button onClick={test} aria-describedby="api-test-status" disabled={!settings.apiKey.trim() || !settings.endpoint.trim() || !settings.model.trim()}>{t('测试连接', 'Test connection')}</button><p id="api-test-status" className="notice" role="status">{testNotice}</p></div>
       </details>
       <section className="settings-group"><h3>{t('隐私与历史', 'Privacy and history')}</h3>
         <p className="privacy-note">{t('只有主动查询才向所选 AI 发送内容：词语仅附所在句子（上下文最多 1000 字符），句段只发选区。不上传整篇文章或 PDF，网址、标题和文件名不发给模型。', 'Only active queries send text to your selected AI. Words use their sentence (context capped at 1000 characters); sentences and paragraphs use only your selection. Full articles, PDFs, URLs, titles, and filenames are not sent to the model.')}</p>

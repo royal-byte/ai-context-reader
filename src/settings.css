@@ -20,5 +20,9 @@
 .settings-form .quiet { border-color: #cbd5c6; background: transparent; color: #596453; }
 .settings-form .hint { color: #596453; font-size: 14px; line-height: 1.8; }
 .settings-form .notice { color: #2f6654; font-size: 15px; font-weight: 600; margin-top: 16px; overflow-wrap: anywhere; }
+.settings-test-row { display: flex; align-items: center; gap: 12px; }
+.settings-test-row > button { flex-shrink: 0; }
+.settings-test-row .notice { flex: 1; min-width: 0; margin: 0; line-height: 1.7; }
+.settings-test-row .notice:empty { display: none; }
 .settings-form button:disabled { opacity: .55; cursor: default; }
 .settings-form :is(input, select, button):focus-visible { outline: 2px solid #2f6654; outline-offset: 3px; }

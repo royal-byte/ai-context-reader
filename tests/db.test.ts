@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readerDb, saveItem, getFavoriteState, recordQuery } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems } from '../src/db';
 import type { ReaderItem } from '../src/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -46,4 +46,33 @@ it('caps optional query history at 200 entries inside one transaction', async ()
   expect(add).toHaveBeenCalledWith(query);
   expect(offset).toHaveBeenCalledWith(200);
   expect(remove).toHaveBeenCalledWith([1]);
+});
+
+it('restores in a single bulk transaction, preserves original timestamps, and skips duplicates without overwriting', async () => {
+  mockItems([existing]);
+  const bulk = vi.spyOn(readerDb.items, 'bulkAdd').mockResolvedValue(9);
+  const put = vi.spyOn(readerDb.items, 'put');
+  const extra = { ...existing, context: 'New source sentence.', createdAt: 2, status: 'new' as const };
+  const fresh = { ...existing, selectedText: 'clarity', lemma: 'clarity', createdAt: 3, status: 'reviewing' as const };
+  expect(await restoreItems([existing, extra, extra, fresh])).toEqual({ added: 2, skipped: 2 });
+  expect(readerDb.transaction).toHaveBeenCalledOnce(); expect(bulk).toHaveBeenCalledOnce();
+  const records = bulk.mock.calls[0]![0] as ReaderItem[];
+  expect(records[0]).toMatchObject({ createdAt: 2, status: 'mastered' });
+  expect(records[1]).toMatchObject({ createdAt: 3, status: 'reviewing' });
+  expect(records[0]).not.toHaveProperty('id'); expect(put).not.toHaveBeenCalled();
+});
+
+it('does not write anything for a repeated restore and propagates bulk failure to abort the transaction', async () => {
+  mockItems([existing]);
+  const bulk = vi.spyOn(readerDb.items, 'bulkAdd').mockRejectedValue(new Error('quota'));
+  expect(await restoreItems([existing])).toEqual({ added: 0, skipped: 1 });
+  expect(bulk).not.toHaveBeenCalled();
+  await expect(restoreItems([{ ...existing, context: 'Different sentence.' }])).rejects.toThrow('quota');
+});
+
+it('keeps the default new state of existing legacy words when adding imported contexts', async () => {
+  mockItems([{ ...existing, status: undefined }]);
+  const bulk = vi.spyOn(readerDb.items, 'bulkAdd').mockResolvedValue(9);
+  await restoreItems([{ ...existing, context: 'Another context.', status: 'mastered' }]);
+  expect((bulk.mock.calls[0]![0] as ReaderItem[])[0]).toMatchObject({ status: 'new' });
 });
