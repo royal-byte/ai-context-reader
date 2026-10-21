@@ -25,6 +25,7 @@ it.each(['reading', 'library', 'history'] as const)('only offers PDF opening on 
   const markup = render(view);
   if (view === 'reading') expect(markup).toContain('＋ 打开 PDF');
   else expect(markup).not.toContain('打开 PDF');
+  if (view === 'reading') expect(markup).toContain('配置 AI 模型');
 });
 
 it('offers reading instead of an empty export action when the library is empty', () => {
@@ -67,7 +68,20 @@ it('keeps source information inside the native inline accordion and exports from
   expect(markup).not.toContain('<dialog');
   expect(markup).toContain('popover="auto"');
   expect(markup).toContain('标记为已掌握');
-  expect(markup).not.toContain('<select');
+  expect(markup).toContain('aria-label="排序"');
+  expect(markup).toContain('语境义');
+  expect(markup).toContain('删除这条语境');
+  expect(markup).toContain('删除整个词条');
+});
+
+it('renders extended explanation fields in saved details', () => {
+  const rich = { ...word, translation: '语境翻译', usage: '固定搭配用法', structure: ['主干', '修饰语'], keyPoints: ['要点一'], examples: ['An example sentence.'] };
+  const markup = render('library', [rich]);
+  expect(markup).toContain('语境翻译');
+  expect(markup).toContain('固定搭配用法');
+  expect(markup).toContain('主干');
+  expect(markup).toContain('要点一');
+  expect(markup).toContain('An example sentence.');
 });
 
 it('uses one native accordion group for all cards and counts legacy and current learning states', () => {

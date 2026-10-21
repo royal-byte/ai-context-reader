@@ -1,5 +1,5 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { DocumentFile, ReaderItem, ReadingDocument, QueryHistory } from './types';
+import type { DocumentFile, ExplanationCache, ReaderItem, ReadingDocument, QueryHistory } from './types';
 import { collectionKind, contextKey, favoriteKey, formatPartOfSpeech, type FavoriteInput } from './library';
 import { planRestore } from './backup';
 
@@ -8,6 +8,7 @@ export const readerDb = new Dexie('ai-context-reader') as Dexie & {
   documents: EntityTable<ReadingDocument, 'id'>;
   files: EntityTable<DocumentFile, 'id'>;
   queries: EntityTable<QueryHistory, 'id'>;
+  explanations: EntityTable<ExplanationCache, 'key'>;
 };
 readerDb.version(1).stores({ items: '++id, uniqueKey, createdAt, sourceUrl' });
 readerDb.version(2).stores({ documents: 'id, lastOpenedAt', files: 'id' });
@@ -20,6 +21,7 @@ readerDb.version(4).stores({
   item.termKey = favoriteKey(item);
   item.contextKey = contextKey(item);
 }));
+readerDb.version(5).stores({ explanations: 'key, createdAt' });
 
 export async function recordQuery(query: QueryHistory) {
   await readerDb.transaction('rw', readerDb.queries, async () => {
@@ -73,5 +75,24 @@ export async function saveItem(item: ReaderItem) {
     if (duplicate?.id !== undefined) return { id: duplicate.id, outcome: 'duplicate' as const };
     const id = await readerDb.items.add(savedRecord(item, sameTerm[0]));
     return { id, outcome: sameTerm.length ? 'context-added' as const : 'saved' as const };
+  });
+}
+
+export async function deleteFavoriteContext(id: number) {
+  await readerDb.items.delete(id);
+}
+
+export async function deleteFavoriteTerm(termKey: string) {
+  await readerDb.items.where('termKey').equals(termKey).delete();
+}
+
+export async function clearQueryHistory() {
+  await readerDb.queries.clear();
+}
+
+export async function deleteReadingDocument(id: string) {
+  await readerDb.transaction('rw', readerDb.documents, readerDb.files, async () => {
+    await readerDb.files.delete(id);
+    await readerDb.documents.delete(id);
   });
 }

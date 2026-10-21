@@ -49,6 +49,16 @@ it.each([
   expect(save.includes('disabled')).toBe(existing === 'duplicate' || Boolean(saved));
 });
 
+it('shows contextual translation, examples and a pronunciation action', () => {
+  state.values = [{ mode: 'word', definition: '释义', translation: '语境翻译', explanation: '解释', examples: ['An example sentence.'], lemma: 'word', partOfSpeech: 'n.' }, false, false, '', '', 0, 'new', false];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'word', context: 'A word in context.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('语境义');
+  expect(markup).toContain('语境翻译');
+  expect(markup).toContain('例句');
+  expect(markup).toContain('An example sentence.');
+  expect(markup).toContain('aria-label="朗读"');
+});
+
 it('does not promise a nonexistent dictionary fallback when AI fails', () => {
   state.values = [undefined, false, false, '', 'API 请求失败（429）。', 0];
   const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'word', context: 'context', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);

@@ -2,9 +2,11 @@ import { readerDb, saveItem, getFavoriteState, recordQuery } from '../src/db';
 import { requestExplanation } from '../src/api';
 import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '../src/validation';
 import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
+import type { Explanation } from '../src/types';
 import { inferReadingMode, isReadingMode, minimalContext, validateSelection } from '../src/reading';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
+import { explanationCacheKey, readCachedExplanation, writeCachedExplanation } from '../src/cache';
 
 const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
 
@@ -32,7 +34,9 @@ export default defineBackground(() => {
   chrome.action.onClicked.addListener(() => { void openWorkspace().catch(() => { /* The tab API may be unavailable during shutdown. */ }); });
 
   chrome.storage.onChanged?.addListener((changes, area) => {
-    if (area !== 'local' || !changes[PREFERENCES_KEY]) return;
+    if (area !== 'local') return;
+    if (changes[SETTINGS_KEY]) void readerDb.explanations.clear().catch(() => { /* Cache is optional. */ });
+    if (!changes[PREFERENCES_KEY]) return;
     const preferences = normalizePreferences(changes[PREFERENCES_KEY].newValue);
     void chrome.tabs.query({}).then((tabs) => Promise.all(tabs.map((tab) => tab.id === undefined
       ? undefined
@@ -60,6 +64,17 @@ export default defineBackground(() => {
           sendResponse({ ok: true });
           return;
         }
+        if (message.type === 'disable-site') {
+          if (!isContentPage(sender)) throw new Error('此操作仅允许在网页中使用。 / This action is only available on web pages.');
+          const host = new URL(sender.url ?? '').hostname.toLowerCase().replace(/\.$/, '');
+          const preferences = await loadPreferences();
+          if (!preferences.blockedSites.includes(host)) {
+            const next = normalizePreferences({ ...preferences, blockedSites: [...preferences.blockedSites, host] });
+            await chrome.storage.local.set({ [PREFERENCES_KEY]: next });
+          }
+          sendResponse({ ok: true });
+          return;
+        }
         if (message.type === 'test-api') {
           if (!isExtensionPage(sender)) throw new Error('此操作仅允许在扩展页面中使用。 / This action is only available in extension pages.');
           const config = normalizeApiSettings(message.settings ?? await settings());
@@ -76,15 +91,32 @@ export default defineBackground(() => {
           const mode = isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);
           const context = minimalContext(message.text, typeof message.context === 'string' ? message.context : '');
           const requestId = typeof message.requestId === 'string' ? message.requestId : '';
-          const controller = requestId ? new AbortController() : undefined;
-          if (requestId && controller) pending.set(requestId, controller);
+          const cacheable = Boolean(config.apiKey.trim());
+          const cacheKey = cacheable
+            ? await explanationCacheKey({ endpoint: config.endpoint, model: config.model, mode, text: message.text, context, language: preferences.explanationLanguage })
+            : '';
+          let cached: Explanation | undefined;
+          try { cached = cacheKey ? await readCachedExplanation(cacheKey) : undefined; }
+          catch { /* Cache is best effort; a broken cache must not block the reader. */ }
           let explanation;
-          try {
-            explanation = config.apiKey.trim()
-              ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal)
-              : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
-          } finally {
-            if (requestId) pending.delete(requestId);
+          let cachedHit = false;
+          if (cached) {
+            explanation = cached;
+            cachedHit = true;
+          } else {
+            const controller = requestId ? new AbortController() : undefined;
+            if (requestId && controller) pending.set(requestId, controller);
+            try {
+              explanation = cacheable
+                ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal)
+                : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
+              if (cacheKey) {
+                try { await writeCachedExplanation(cacheKey, explanation); }
+                catch { /* Cache write failure must not discard a valid explanation. */ }
+              }
+            } finally {
+              if (requestId) pending.delete(requestId);
+            }
           }
           let warning: string | undefined;
           if ((await loadPreferences()).saveQueryHistory) {
@@ -95,7 +127,7 @@ export default defineBackground(() => {
               await chrome.storage.local.set({ 'query-history-updated': Date.now() });
             } catch { warning = '解释已取得，但查询历史保存失败，请检查本机存储。 / Explanation ready, but query history could not be saved. Check local storage.'; }
           }
-          sendResponse({ ok: true, explanation, warning });
+          sendResponse({ ok: true, explanation, warning, cached: cachedHit });
           return;
         }
         if (message.type === 'favorite-state' || message.type === 'save') {

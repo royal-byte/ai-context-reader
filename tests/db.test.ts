@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument } from '../src/db';
 import type { ReaderItem } from '../src/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -79,4 +79,26 @@ it('keeps the default new state of existing legacy words when adding imported co
   const bulk = vi.spyOn(readerDb.items, 'bulkAdd').mockResolvedValue(9);
   await restoreItems([{ ...existing, context: 'Another context.', status: 'mastered' }]);
   expect((bulk.mock.calls[0]![0] as ReaderItem[])[0]).toMatchObject({ status: 'new' });
+});
+
+it('deletes one context, a whole term, query history and a stored PDF', async () => {
+  const removeItem = vi.spyOn(readerDb.items, 'delete').mockResolvedValue();
+  await deleteFavoriteContext(7);
+  expect(removeItem).toHaveBeenCalledWith(7);
+
+  const removeTerm = vi.fn(async () => {});
+  vi.spyOn(readerDb.items, 'where').mockReturnValue({ equals: () => ({ delete: removeTerm }) } as never);
+  await deleteFavoriteTerm('term-key');
+  expect(removeTerm).toHaveBeenCalledOnce();
+
+  const clear = vi.spyOn(readerDb.queries, 'clear').mockResolvedValue();
+  await clearQueryHistory();
+  expect(clear).toHaveBeenCalledOnce();
+
+  vi.spyOn(readerDb, 'transaction').mockImplementation((async (...args: unknown[]) => (args.at(-1) as () => Promise<unknown>)()) as never);
+  const files = vi.spyOn(readerDb.files, 'delete').mockResolvedValue();
+  const documents = vi.spyOn(readerDb.documents, 'delete').mockResolvedValue();
+  await deleteReadingDocument('pdf-id');
+  expect(files).toHaveBeenCalledWith('pdf-id');
+  expect(documents).toHaveBeenCalledWith('pdf-id');
 });

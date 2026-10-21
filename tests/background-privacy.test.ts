@@ -3,9 +3,11 @@ import { DEFAULT_API_SETTINGS, SETTINGS_KEY } from '../src/api-settings';
 import { DEFAULT_PREFERENCES, PREFERENCES_KEY } from '../src/preferences';
 import { readerDb, recordQuery, getFavoriteState, saveItem } from '../src/db';
 import { requestExplanation } from '../src/api';
+import { readCachedExplanation, writeCachedExplanation } from '../src/cache';
 
 vi.mock('../src/api', () => ({ requestExplanation: vi.fn(async () => ({ definition: 'Meaning', translation: 'Translation', explanation: 'Context', examples: [] })) }));
 vi.mock('../src/db', () => ({ readerDb: {}, saveItem: vi.fn(async () => ({ id: 1, outcome: 'saved' })), getFavoriteState: vi.fn(async () => 'new'), recordQuery: vi.fn(async () => {}) }));
+vi.mock('../src/cache', () => ({ explanationCacheKey: vi.fn(async () => 'cache-key'), readCachedExplanation: vi.fn(async () => undefined), writeCachedExplanation: vi.fn(async () => {}) }));
 let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => void;
 let preferences = { ...DEFAULT_PREFERENCES };
 
@@ -39,6 +41,23 @@ const sendAs = (value: unknown, sender: Record<string, unknown>) => new Promise<
 
 it('restricts local storage to trusted extension contexts', () => {
   expect(chrome.storage.local.setAccessLevel).toHaveBeenCalledWith({ accessLevel: 'TRUSTED_CONTEXTS' });
+});
+
+it('serves a fresh local cache without calling the model', async () => {
+  vi.mocked(readCachedExplanation).mockResolvedValueOnce({ definition: 'Cached', translation: '缓存', explanation: '缓存解释', examples: [] });
+  const result = await send();
+  expect(result.cached).toBe(true);
+  expect(result.explanation.definition).toBe('Cached');
+  expect(requestExplanation).not.toHaveBeenCalled();
+  expect(writeCachedExplanation).not.toHaveBeenCalled();
+});
+
+it('adds the current page host to the blocked site list', async () => {
+  const response = await send({ type: 'disable-site' });
+  expect(response.ok).toBe(true);
+  expect(chrome.storage.local.set).toHaveBeenCalledWith({
+    [PREFERENCES_KEY]: expect.objectContaining({ blockedSites: ['example.com'] })
+  });
 });
 
 it('defaults to no query log and strips unrelated context and source metadata from model calls', async () => {
