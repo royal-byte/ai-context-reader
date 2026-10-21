@@ -5,6 +5,7 @@ export default defineConfig({
   manifest: {
     name: 'AI Context Reader',
     description: 'Select text on a page to understand it in context.',
+    minimum_chrome_version: '120',
     permissions: ['storage', 'downloads', 'tabs'],
     host_permissions: ['<all_urls>'],
     content_security_policy: { extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'" },

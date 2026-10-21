@@ -16,6 +16,7 @@
 .workspace-content { display: flex; flex: 1; flex-direction: column; min-height: 0; }
 .workbench [hidden] { display: none; }
 .settings-page { flex: 1; min-height: 0; overflow-y: auto; }
+.settings-loading { padding: 48px; color: #667064; font-size: 15px; }
 .workspace-toolbar { flex-shrink: 0; min-height: var(--toolbar-height); padding: 24px 36px; border-bottom: 1px solid #e1e5da; background: #fdfefb; }
 .toolbar-inner { display: flex; justify-content: space-between; align-items: center; gap: 24px; width: 100%; height: 100%; margin: auto; }
 .toolbar-inner > div:first-child { min-width: 0; } .toolbar-eyebrow { display: block; font-size: 12px; color: #667064; letter-spacing: 1.2px; margin-bottom: 8px; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { demoExplanation, parseExplanation } from '../src/validation';
+import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery, parseExplanation } from '../src/validation';
 import { sourceSentence } from '../src/reading';
 
 describe('parseExplanation', () => {
@@ -17,6 +17,35 @@ describe('parseExplanation', () => {
   });
   it('rejects incomplete model output', () => {
     expect(() => parseExplanation('{"definition":"x"}')).toThrow('translation');
+  });
+  it('recovers JSON from prose and bounded fenced output', () => {
+    const body = JSON.stringify({ definition: 'x', translation: 'y', explanation: 'z', examples: [] });
+    expect(parseExplanation(`Here is the JSON:\n\`\`\`json\n${body}\n\`\`\``).definition).toBe('x');
+    expect(() => parseExplanation('not json')).toThrow('有效 JSON');
+  });
+  it('rejects oversized explanatory fields and examples', () => {
+    expect(() => parseExplanation(JSON.stringify({ ...base, definition: 'x'.repeat(8_001) }))).toThrow('过长');
+    expect(() => parseExplanation(JSON.stringify({ ...base, examples: ['x'.repeat(2_001)] }))).toThrow('examples');
+  });
+});
+
+describe('favorite payload validation', () => {
+  const base = { selectedText: 'undermine', context: 'This could undermine trust.', sourceUrl: 'https://example.com/article', sourceTitle: 'Article', definition: '削弱', translation: '削弱', explanation: '逐渐削弱', examples: [] };
+  it('whitelists the save payload and derives the collection kind', () => {
+    expect(normalizeFavoriteItem({ ...base, kind: 'excerpt', mode: 'word', status: 'mastered' })).toMatchObject({
+      selectedText: 'undermine', kind: 'vocabulary', sourceUrl: 'https://example.com/article'
+    });
+    expect(normalizeFavoriteQuery({ selectedText: 'undermine', context: base.context, sourceUrl: base.sourceUrl })).toMatchObject({ selectedText: 'undermine' });
+  });
+  it('rejects unbounded context, forged PDF ids and missing explanations', () => {
+    expect(() => normalizeFavoriteItem({ ...base, context: 'x'.repeat(5_001) })).toThrow('过长');
+    expect(() => normalizeFavoriteItem({ ...base, sourceUrl: 'local-pdf:abc', documentId: 'abc' })).toThrow('文档编号');
+    expect(() => normalizeFavoriteItem({ ...base, definition: '' })).toThrow('definition');
+    expect(() => normalizeFavoriteItem({ ...base, pageNumber: 2 })).toThrow('网页收藏');
+  });
+  it('accepts a well-formed local PDF payload', () => {
+    const id = 'a'.repeat(64);
+    expect(normalizeFavoriteItem({ ...base, sourceUrl: `local-pdf:${id}`, documentId: id, pageNumber: 2 })).toMatchObject({ documentId: id, pageNumber: 2, kind: 'vocabulary' });
   });
 });
 

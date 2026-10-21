@@ -20,7 +20,8 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, langu
       const page = await pdf.getPage(pageNumber);
       if (!active || !host.current) return;
       const base = page.getViewport({ scale: 1 });
-      const scale = zoom === 'fit' ? Math.max(.25, Math.min(2, (width - 64) / base.width)) : Number(zoom);
+      const requestedZoom = zoom === 'fit' ? 'fit' : Number.isFinite(Number(zoom)) ? Math.max(.25, Math.min(4, Number(zoom))) : 'fit';
+      const scale = requestedZoom === 'fit' ? Math.max(.25, Math.min(2, (width - 64) / base.width)) : requestedZoom;
       const viewport = page.getViewport({ scale });
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = document.createElement('canvas');
@@ -36,10 +37,15 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, langu
       let pageText = '';
       const textRendering = page.getTextContent().then(async (text) => {
         if (!active || !host.current) return;
-        pageText = text.items.map((item) => 'str' in item ? item.str : '').join(' ').replace(/\s+/g, ' ').trim();
-        host.current.dataset.pageText = pageText;
         textLayer = new TextLayer({ textContentSource: text, container: layer, viewport });
         await textLayer.render();
+        if (!active || !host.current) return;
+        // Read the rendered spans, not the raw text items: Workbench maps a
+        // selection back to offsets using the same span order and separators.
+        const spansText = [...layer.querySelectorAll<HTMLElement>('span')].map((span) => span.textContent ?? '').join(' ');
+        const itemsText = text.items.map((item) => 'str' in item ? item.str : '').join(' ');
+        pageText = (spansText.trim() ? spansText : itemsText).replace(/\s+/g, ' ').trim();
+        host.current.dataset.pageText = pageText;
       });
       await Promise.all([renderTask.promise, textRendering]);
       if (active) { setLoading(false); setEmpty(!pageText); }

@@ -6,6 +6,10 @@ afterEach(() => vi.restoreAllMocks());
 const existing: ReaderItem = { id: 7, uniqueKey: 'legacy-key', selectedText: 'undermine', lemma: 'undermine', context: 'This could undermine trust.', sourceUrl: 'https://example.com', sourceTitle: 'Title', createdAt: 1, definition: 'old', translation: 'old', explanation: 'old', examples: [], mode: 'word', status: 'mastered' };
 function mockItems(items: ReaderItem[]) {
   vi.spyOn(readerDb.items, 'toArray').mockResolvedValue(items);
+  vi.spyOn(readerDb.items, 'where').mockImplementation(((key: string) => {
+    if (key !== 'termKey') throw new Error(`Unexpected index: ${key}`);
+    return { equals: () => ({ toArray: async () => items }) };
+  }) as never);
   vi.spyOn(readerDb, 'transaction').mockImplementation((async (...args: unknown[]) => (args.at(-1) as () => Promise<unknown>)()) as never);
   return vi.spyOn(readerDb.items, 'add').mockResolvedValue(8);
 }

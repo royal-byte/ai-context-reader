@@ -1,34 +1,193 @@
-import type { Explanation, ReadingMode } from './types';
-import { inferReadingMode, isReadingMode, sourceSentence } from './reading';
+import type { Explanation, ReaderItem, ReadingMode } from './types';
+import { cleanSelection, inferReadingMode, isReadingMode, MAX_SELECTION_LENGTH, sourceSentence } from './reading';
+import { collectionKind, type FavoriteInput } from './library';
+
+const MAX_TEXT = 8_000;
+const MAX_CONTEXT = 5_000;
+const MAX_ARRAY_ITEM = 2_000;
+
+function parseJsonObject(input: string): unknown {
+  const trimmed = input.trim();
+  try { return JSON.parse(trimmed); } catch {
+    // Some providers wrap JSON in prose or a fenced block. Recover the first
+    // object instead of surfacing a raw SyntaxError to the reader.
+    const start = trimmed.indexOf('{');
+    const end = trimmed.lastIndexOf('}');
+    if (start < 0 || end <= start) throw new Error('模型未返回有效 JSON，请重试。');
+    try { return JSON.parse(trimmed.slice(start, end + 1)); }
+    catch { throw new Error('模型未返回有效 JSON，请重试。'); }
+  }
+}
+
+function explanationText(item: Record<string, unknown>, key: string, max = MAX_TEXT): string {
+  const value = item[key];
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`API 返回缺少 ${key}。`);
+  if (value.length > max) throw new Error(`API 返回的 ${key} 过长。`);
+  return value;
+}
+
+function optionalText(item: Record<string, unknown>, key: string, max = MAX_TEXT): string | undefined {
+  const value = item[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error(`API 返回 ${key} 格式不正确。`);
+  if (value.length > max) throw new Error(`API 返回的 ${key} 过长。`);
+  return value;
+}
+
+function stringList(item: Record<string, unknown>, key: string, maxItems: number): string[] | undefined {
+  const value = item[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > maxItems || !value.every((entry) => typeof entry === 'string' && entry.trim() && entry.length <= MAX_ARRAY_ITEM)) {
+    throw new Error(`API 返回 ${key} 格式不正确。`);
+  }
+  return value as string[];
+}
 
 export function parseExplanation(input: string, mode?: ReadingMode): Explanation {
-  const json = input.replace(/^```(?:json)?\s*|\s*```$/g, '').trim();
-  const value: unknown = JSON.parse(json);
+  const value = parseJsonObject(input);
   if (!value || typeof value !== 'object') throw new Error('API 返回的不是对象。');
   const item = value as Record<string, unknown>;
-  const strings = ['definition', 'translation', 'explanation'] as const;
-  for (const key of strings) if (typeof item[key] !== 'string' || !item[key].trim()) throw new Error(`API 返回缺少 ${key}。`);
-  if (!Array.isArray(item.examples) || !item.examples.every((x) => typeof x === 'string')) throw new Error('API 返回 examples 格式不正确。');
-  const result: Explanation = { definition: item.definition as string, translation: item.translation as string, explanation: item.explanation as string, examples: item.examples as string[], register: typeof item.register === 'string' ? item.register : undefined };
+  const definition = explanationText(item, 'definition');
+  const translation = explanationText(item, 'translation');
+  const explanation = explanationText(item, 'explanation');
+  if (!Array.isArray(item.examples) || !item.examples.every((entry) => typeof entry === 'string' && entry.length <= MAX_ARRAY_ITEM)) throw new Error('API 返回 examples 格式不正确。');
+  const examples = (item.examples as string[]).slice(0, 5);
+  const result: Explanation = { definition, translation, explanation, examples, register: optionalText(item, 'register', 100) };
   const actualMode = isReadingMode(item.mode) ? item.mode : mode;
   if (isReadingMode(item.mode)) result.mode = item.mode;
   const phonetic = typeof item.phonetic === 'string' ? item.phonetic.trim() : '';
   if (/^\/[^/\r\n]{1,80}\/$/u.test(phonetic)) result.phonetic = phonetic;
+  const optionalCaps = { lemma: 200, partOfSpeech: 100, usage: 5_000, sentenceTranslation: MAX_TEXT } as const;
   for (const key of ['lemma', 'partOfSpeech', 'usage', 'sentenceTranslation'] as const) {
-    if (item[key] !== undefined && typeof item[key] !== 'string') throw new Error(`API 返回 ${key} 格式不正确。`);
-    if (typeof item[key] === 'string') result[key] = item[key];
+    const value = optionalText(item, key, optionalCaps[key]);
+    if (value !== undefined) result[key] = value;
   }
   for (const key of ['structure', 'keyPoints'] as const) {
-    if (item[key] !== undefined) {
-      if (!Array.isArray(item[key]) || !item[key].every((x) => typeof x === 'string' && x.trim())) throw new Error(`API 返回 ${key} 格式不正确。`);
-      result[key] = item[key] as string[];
-    }
+    const value = stringList(item, key, 10);
+    if (value !== undefined) result[key] = value;
   }
   const required = actualMode === 'word' ? ['lemma', 'partOfSpeech'] as const : actualMode === 'phrase' ? ['usage'] as const : [];
   for (const key of required) if (!result[key]?.trim()) throw new Error(`API 返回缺少 ${key}。请重试。`);
   if (actualMode === 'sentence' && !result.structure?.length) throw new Error('API 返回缺少句子结构。请重试。');
   if (actualMode === 'paragraph' && !result.keyPoints?.length) throw new Error('API 返回缺少段落要点。请重试。');
   return result;
+}
+
+function requiredItemText(input: Record<string, unknown>, key: string, max = MAX_TEXT): string {
+  const value = input[key];
+  if (typeof value !== 'string' || !value.trim()) throw new Error(`收藏缺少 ${key}。`);
+  if (value.length > max) throw new Error(`收藏的 ${key} 过长。`);
+  return value;
+}
+
+function optionalItemText(input: Record<string, unknown>, key: string, max = MAX_TEXT): string | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new Error(`收藏的 ${key} 格式不正确。`);
+  if (value.length > max) throw new Error(`收藏的 ${key} 过长。`);
+  return value;
+}
+
+function itemStringList(input: Record<string, unknown>, key: string, maxItems: number): string[] | undefined {
+  const value = input[key];
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > maxItems || !value.every((entry) => typeof entry === 'string' && entry.trim() && entry.length <= MAX_ARRAY_ITEM)) {
+    throw new Error(`收藏的 ${key} 格式不正确。`);
+  }
+  return value as string[];
+}
+
+function positiveInteger(value: unknown, field: string): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > 1_000_000) throw new Error(`收藏的 ${field} 无效。`);
+  return value as number;
+}
+
+function sourceFields(input: Record<string, unknown>) {
+  const sourceUrl = requiredItemText(input, 'sourceUrl', 8_192);
+  let url: URL;
+  try { url = new URL(sourceUrl); } catch { throw new Error('收藏来源无效。'); }
+  if (!['http:', 'https:', 'local-pdf:'].includes(url.protocol) || url.username || url.password) throw new Error('收藏来源无效。');
+  let documentId: string | undefined;
+  let pageNumber: number | undefined;
+  if (url.protocol === 'local-pdf:') {
+    documentId = requiredItemText(input, 'documentId', 64);
+    if (!/^[a-f0-9]{64}$/i.test(documentId) || sourceUrl !== `local-pdf:${documentId}`) throw new Error('收藏的文档编号无效。');
+    pageNumber = positiveInteger(input.pageNumber, 'pageNumber');
+  } else {
+    if (input.documentId !== undefined || input.pageNumber !== undefined) throw new Error('网页收藏不能包含文档编号或页码。');
+  }
+  return { sourceUrl, documentId, pageNumber };
+}
+
+function selectedText(input: Record<string, unknown>) {
+  const value = requiredItemText(input, 'selectedText', MAX_SELECTION_LENGTH * 4);
+  const text = cleanSelection(value);
+  if (!text) throw new Error('请选择要解释的文字。');
+  if (text.length > MAX_SELECTION_LENGTH) throw new Error('单次最多解释 3000 字符，请缩小选区。');
+  return text;
+}
+
+/** Validate the light payload used by favorite-state checks. */
+export function normalizeFavoriteQuery(value: unknown): FavoriteInput {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏信息无效。');
+  const input = value as Record<string, unknown>;
+  const { sourceUrl, documentId, pageNumber } = sourceFields(input);
+  return {
+    selectedText: selectedText(input),
+    context: optionalItemText(input, 'context', MAX_CONTEXT) ?? '',
+    sourceUrl,
+    sourceTitle: optionalItemText(input, 'sourceTitle', 2_000) ?? '',
+    sourceSentence: optionalItemText(input, 'sourceSentence', MAX_CONTEXT),
+    mode: isReadingMode(input.mode) ? input.mode : undefined,
+    lemma: optionalItemText(input, 'lemma', 200),
+    documentId,
+    pageNumber
+  };
+}
+
+/** Validate and whitelist the full item accepted by the save message. */
+export function normalizeFavoriteItem(value: unknown): ReaderItem {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('收藏信息无效。');
+  const input = value as Record<string, unknown>;
+  const { sourceUrl, documentId, pageNumber } = sourceFields(input);
+  const text = selectedText(input);
+  const mode = isReadingMode(input.mode) ? input.mode : inferReadingMode(text);
+  const item: ReaderItem = {
+    uniqueKey: '',
+    selectedText: text,
+    context: optionalItemText(input, 'context', MAX_CONTEXT) ?? '',
+    sourceUrl,
+    sourceTitle: optionalItemText(input, 'sourceTitle', 2_000) ?? '',
+    createdAt: 0,
+    definition: requiredItemText(input, 'definition'),
+    translation: requiredItemText(input, 'translation'),
+    explanation: requiredItemText(input, 'explanation'),
+    examples: itemStringList(input, 'examples', 5) ?? [],
+    mode,
+    kind: collectionKind({ mode, selectedText: text }),
+    documentId,
+    pageNumber
+  };
+  const optional: Array<[keyof ReaderItem, string, number]> = [
+    ['lemma', 'lemma', 200],
+    ['partOfSpeech', 'partOfSpeech', 100],
+    ['usage', 'usage', MAX_CONTEXT],
+    ['sentenceTranslation', 'sentenceTranslation', MAX_TEXT],
+    ['sourceSentence', 'sourceSentence', MAX_CONTEXT],
+    ['register', 'register', 100]
+  ];
+  for (const [field, key, max] of optional) {
+    const entry = optionalItemText(input, key, max);
+    if (entry !== undefined) item[field] = entry as never;
+  }
+  const phonetic = optionalItemText(input, 'phonetic', 80);
+  if (phonetic && /^\/[^/\r\n]{1,80}\/$/u.test(phonetic)) item.phonetic = phonetic;
+  for (const key of ['structure', 'keyPoints'] as const) {
+    const entries = itemStringList(input, key, 10);
+    if (entries !== undefined) item[key] = entries;
+  }
+  return item;
 }
 
 export function demoExplanation(text: string, context: string, mode: ReadingMode = inferReadingMode(text), language: 'zh-CN' | 'en' = 'zh-CN'): Explanation {

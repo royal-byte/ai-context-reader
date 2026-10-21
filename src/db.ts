@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { DocumentFile, ReaderItem, ReadingDocument, QueryHistory } from './types';
-import { collectionKind, contextKey, favoriteKey, favoriteState, formatPartOfSpeech, type FavoriteInput } from './library';
+import { collectionKind, contextKey, favoriteKey, formatPartOfSpeech, type FavoriteInput } from './library';
 import { planRestore } from './backup';
 
 export const readerDb = new Dexie('ai-context-reader') as Dexie & {
@@ -12,6 +12,14 @@ export const readerDb = new Dexie('ai-context-reader') as Dexie & {
 readerDb.version(1).stores({ items: '++id, uniqueKey, createdAt, sourceUrl' });
 readerDb.version(2).stores({ documents: 'id, lastOpenedAt', files: 'id' });
 readerDb.version(3).stores({ queries: '++id, createdAt' });
+// v4 keeps the original rows and only adds indexed identity columns. The upgrade
+// backfills legacy rows so the normal save path never needs a full-table scan.
+readerDb.version(4).stores({
+  items: '++id, uniqueKey, termKey, contextKey, createdAt, sourceUrl, [termKey+contextKey]'
+}).upgrade((tx) => tx.table<ReaderItem>('items').toCollection().modify((item) => {
+  item.termKey = favoriteKey(item);
+  item.contextKey = contextKey(item);
+}));
 
 export async function recordQuery(query: QueryHistory) {
   await readerDb.transaction('rw', readerDb.queries, async () => {
@@ -22,13 +30,27 @@ export async function recordQuery(query: QueryHistory) {
 }
 
 export async function getFavoriteState(item: FavoriteInput) {
-  return favoriteState(await readerDb.items.toArray(), item);
+  const term = favoriteKey(item);
+  const context = contextKey(item);
+  const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
+  if (sameTerm.some((saved) => (saved.contextKey ?? contextKey(saved)) === context)) return 'duplicate' as const;
+  return sameTerm.length ? 'context' as const : 'new' as const;
 }
 
 function savedRecord(item: ReaderItem, existing?: ReaderItem, restore = false): ReaderItem {
   const kind = collectionKind(item);
   const { id: _id, ...record } = item;
-  return { ...record, uniqueKey: JSON.stringify([favoriteKey(item), contextKey(item)]), kind, partOfSpeech: formatPartOfSpeech(item.partOfSpeech) || undefined, status: kind === 'vocabulary' ? (existing ?? (restore ? item : undefined))?.status ?? 'new' : undefined };
+  const termKey = favoriteKey(item);
+  const contextKeyValue = contextKey(item);
+  return {
+    ...record,
+    uniqueKey: JSON.stringify([termKey, contextKeyValue]),
+    termKey,
+    contextKey: contextKeyValue,
+    kind,
+    partOfSpeech: formatPartOfSpeech(item.partOfSpeech) || undefined,
+    status: kind === 'vocabulary' ? (existing ?? (restore ? item : undefined))?.status ?? 'new' : undefined
+  };
 }
 
 export async function restoreItems(incoming: ReaderItem[]) {
@@ -44,12 +66,12 @@ export async function restoreItems(incoming: ReaderItem[]) {
 
 export async function saveItem(item: ReaderItem) {
   return readerDb.transaction('rw', readerDb.items, async () => {
-    // ponytail: O(n) lookup keeps legacy records untouched; add an indexed term key if the local library outgrows this MVP.
-    const items = await readerDb.items.toArray();
-    const state = favoriteState(items, item);
-    const existing = items.find((saved) => favoriteKey(saved) === favoriteKey(item) && (state !== 'duplicate' || contextKey(saved) === contextKey(item)));
-    if (state === 'duplicate') return { id: existing!.id!, outcome: 'duplicate' as const };
-    const id = await readerDb.items.add(savedRecord(item, existing));
-    return { id, outcome: state === 'context' ? 'context-added' as const : 'saved' as const };
+    const term = favoriteKey(item);
+    const context = contextKey(item);
+    const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
+    const duplicate = sameTerm.find((saved) => (saved.contextKey ?? contextKey(saved)) === context);
+    if (duplicate?.id !== undefined) return { id: duplicate.id, outcome: 'duplicate' as const };
+    const id = await readerDb.items.add(savedRecord(item, sameTerm[0]));
+    return { id, outcome: sameTerm.length ? 'context-added' as const : 'saved' as const };
   });
 }

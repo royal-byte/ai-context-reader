@@ -12,8 +12,18 @@ export const API_PRESETS = {
 export type ApiProvider = keyof typeof API_PRESETS;
 export const SETTINGS_KEY = 'byol-settings';
 export const DEFAULT_API_SETTINGS: ApiSettings = {
-  endpoint: API_PRESETS.openai.endpoint, model: API_PRESETS.openai.model, apiKey: ''
+  endpoint: API_PRESETS.openai.endpoint, model: API_PRESETS.openai.model, apiKey: '', allowPrivateNetwork: false
 };
+
+export function normalizeApiSettings(value: unknown): ApiSettings {
+  const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  return {
+    endpoint: typeof input.endpoint === 'string' ? input.endpoint : DEFAULT_API_SETTINGS.endpoint,
+    model: typeof input.model === 'string' ? input.model : DEFAULT_API_SETTINGS.model,
+    apiKey: typeof input.apiKey === 'string' ? input.apiKey : '',
+    allowPrivateNetwork: input.allowPrivateNetwork === true
+  };
+}
 
 export function providerForEndpoint(endpoint: string): ApiProvider {
   try {
@@ -30,5 +40,5 @@ export function providerForEndpoint(endpoint: string): ApiProvider {
 
 export function selectApiProvider(provider: ApiProvider): ApiSettings {
   const { endpoint, model } = API_PRESETS[provider];
-  return { endpoint, model, apiKey: '' };
+  return { endpoint, model, apiKey: '', allowPrivateNetwork: false };
 }

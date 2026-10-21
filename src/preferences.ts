@@ -33,6 +33,20 @@ export function parseSiteList(input: string): string[] {
   }))];
 }
 
+/**
+ * Stored settings are untrusted input: a single corrupt entry must not make the
+ * reader permanently unusable. Invalid site entries are dropped, never thrown.
+ */
+function safeSiteList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const lines = value.filter((item): item is string => typeof item === 'string').slice(0, 100);
+  const sites: string[] = [];
+  for (const line of lines) {
+    try { sites.push(...parseSiteList(line)); } catch { /* Drop only the corrupt entry. */ }
+  }
+  return [...new Set(sites)].slice(0, 100);
+}
+
 export function normalizePreferences(value: unknown): ReaderPreferences {
   const input = value && typeof value === 'object' ? value as Record<string, unknown> : {};
   const result = { ...DEFAULT_PREFERENCES };
@@ -41,15 +55,24 @@ export function normalizePreferences(value: unknown): ReaderPreferences {
     if (typeof input[key] === 'string' && choices[key].includes(input[key] as string)) Object.assign(result, { [key]: input[key] });
   }
   for (const key of ['saveQueryHistory', 'saveReadingProgress'] as const) if (typeof input[key] === 'boolean') result[key] = input[key];
-  for (const key of ['allowedSites', 'blockedSites'] as const) {
-    if (Array.isArray(input[key])) result[key] = parseSiteList(input[key].filter((item) => typeof item === 'string').join('\n'));
-  }
+  result.allowedSites = safeSiteList(input.allowedSites);
+  result.blockedSites = safeSiteList(input.blockedSites);
   return result;
 }
 
-export async function loadPreferences() {
-  const stored = await chrome.storage.local.get(PREFERENCES_KEY);
-  return normalizePreferences(stored[PREFERENCES_KEY]);
+/** Content scripts only see http(s); extension pages and the service worker read directly. */
+function isContentScriptContext() {
+  return typeof document !== 'undefined' && typeof location !== 'undefined' && location.protocol !== 'chrome-extension:';
+}
+
+export async function loadPreferences(): Promise<ReaderPreferences> {
+  if (!isContentScriptContext()) {
+    const stored = await chrome.storage.local.get(PREFERENCES_KEY);
+    return normalizePreferences(stored[PREFERENCES_KEY]);
+  }
+  const response = await chrome.runtime.sendMessage({ type: 'get-preferences' }) as { ok?: boolean; preferences?: unknown } | undefined;
+  if (!response?.ok) throw new Error('读取设置失败。 / Could not read preferences.');
+  return normalizePreferences(response.preferences);
 }
 
 export function useReaderPreferences() {
@@ -58,15 +81,27 @@ export function useReaderPreferences() {
   useEffect(() => {
     let active = true;
     let changedSinceLoad = false;
-    const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-      if (area === 'local' && changes[PREFERENCES_KEY]) {
-        changedSinceLoad = true;
-        try { setPreferences(normalizePreferences(changes[PREFERENCES_KEY].newValue)); setReady(true); } catch { setReady(false); }
-      }
+    const update = (value: unknown) => {
+      changedSinceLoad = true;
+      setPreferences(normalizePreferences(value));
+      setReady(true);
     };
-    chrome.storage.onChanged.addListener(changed);
+    const changed = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+      if (area === 'local' && changes[PREFERENCES_KEY]) update(changes[PREFERENCES_KEY].newValue);
+    };
+    const message = (value: unknown) => {
+      const data = value as { type?: string; preferences?: unknown } | undefined;
+      if (data?.type === 'preferences-updated') update(data.preferences);
+    };
+    const contentScript = isContentScriptContext();
+    if (contentScript) chrome.runtime.onMessage.addListener(message);
+    else chrome.storage.onChanged.addListener(changed);
     void loadPreferences().then((value) => { if (active && !changedSinceLoad) { setPreferences(value); setReady(true); } }).catch(() => { /* Fail closed: selection cannot send a query until preferences load. */ });
-    return () => { active = false; chrome.storage.onChanged.removeListener(changed); };
+    return () => {
+      active = false;
+      if (contentScript) chrome.runtime.onMessage.removeListener(message);
+      else chrome.storage.onChanged.removeListener(changed);
+    };
   }, []);
   return { preferences, ready };
 }

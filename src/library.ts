@@ -1,4 +1,4 @@
-import { cleanSelection, inferReadingMode, sourceSentence } from './reading';
+import { cleanSelection, inferReadingMode, sentenceSegments, sourceSentence } from './reading';
 import type { CollectionKind, ReaderItem } from './types';
 
 export function collectionKind(item: Pick<ReaderItem, 'kind' | 'mode' | 'selectedText'>): CollectionKind {
@@ -56,7 +56,7 @@ export function relatedVocabulary(item: ReaderItem, items: ReaderItem[]) {
   const sentences = new Map<string, ReaderItem>();
   for (const record of items) {
     if (!source(record)) continue;
-    for (const part of new Intl.Segmenter('en', { granularity: 'sentence' }).segment(sentence(record))) {
+    for (const part of sentenceSegments(sentence(record))) {
       const text = cleanSelection(part.segment);
       if (containsTarget(text)) {
         const evidence = { ...record, sourceSentence: text };

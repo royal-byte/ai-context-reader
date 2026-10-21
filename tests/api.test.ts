@@ -68,6 +68,39 @@ describe('provider support', () => {
     expect(body).not.toHaveProperty('thinking');
   });
 
+  it('omits temperature and uses max_completion_tokens for OpenAI reasoning models', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetchMock);
+    await requestExplanation({ ...selectApiProvider('openai'), model: 'o3-mini', apiKey: 'test-only-key' }, 'resilient', 'A resilient system recovers.');
+    const body = JSON.parse(fetchMock.mock.calls[0]![1].body);
+    expect(body.temperature).toBeUndefined();
+    expect(body.max_completion_tokens).toBe(1024);
+    expect(body.max_tokens).toBeUndefined();
+  });
+
+  it('retries once with a minimal body when a compatible endpoint rejects advanced parameters', async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response('bad request', { status: 400 })).mockResolvedValueOnce(response());
+    vi.stubGlobal('fetch', fetchMock);
+    const result = await requestExplanation({ ...selectApiProvider('openai'), apiKey: 'test-only-key' }, 'resilient', 'A resilient system recovers.');
+    expect(result.definition).toBe('能够恢复的');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const body = JSON.parse(fetchMock.mock.calls[1]![1].body);
+    expect(body.response_format).toBeUndefined();
+    expect(body.temperature).toBeUndefined();
+    expect(body.max_tokens).toBe(1024);
+  });
+
+  it('requires an explicit opt-in for private-network HTTP', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(response());
+    vi.stubGlobal('fetch', fetchMock);
+    const settings = { endpoint: 'http://192.168.1.10:11434/v1', model: 'llama', apiKey: 'test-only-key' };
+    await expect(requestExplanation(settings, 'resilient', 'context')).rejects.toThrow('局域网');
+    expect(fetchMock).not.toHaveBeenCalled();
+    await requestExplanation({ ...settings, allowPrivateNetwork: true }, 'resilient', 'context');
+    expect(fetchMock).toHaveBeenCalledOnce();
+    expect(fetchMock.mock.calls[0]![0]).toBe('http://192.168.1.10:11434/v1/chat/completions');
+  });
+
   it.each(['MiniMax-M3.1-Flash', 'MiniMax-M2.7'])('separates reasoning without trying to disable mandatory thinking (%s)', async (model) => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ base_resp: { status_code: 0 }, choices: [{ message: { reasoning_content: 'Private reasoning, not a JSON answer.', content: JSON.stringify(explanation) }, finish_reason: 'stop' }] })));
     vi.stubGlobal('fetch', fetchMock);
@@ -116,7 +149,7 @@ describe('connection failures', () => {
 
   it('reports timeout instead of waiting indefinitely', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new DOMException('timed out', 'TimeoutError')));
-    await expect(requestExplanation(settings, 'text', 'context')).rejects.toThrow('45 秒');
+    await expect(requestExplanation(settings, 'text', 'context')).rejects.toThrow('25 秒');
   });
 
   it('rejects malformed or truncated model output', async () => {

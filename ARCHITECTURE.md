@@ -108,3 +108,11 @@ Dexie v3 仅新增 `queries: ++id,createdAt`，保留旧表和已有数据。查
 预览和最终恢复共享 `planRestore`，复用 `favoriteKey` / `contextKey` 去重，并兼容缺少 lemma 的旧记录相同选区。数据库事务内重读现有记录，重新规划，用 Set/Map 与一次 bulkAdd 合并，异常不在事务内吞掉，确保整批回滚。`savedRecord` 同时供主动收藏和恢复复用：重新生成键与编号，恢复保留时间和新词状态，已有词新语境继承当前状态。旧行不更新，documents/files/queries 和 Dexie v3 不变。
 
 工作台原生文件选择器读取 JSON，确认前只在内存预览；成功后刷新列表、通知其他页面，通知失败不误报回滚。下载沿用旧数组格式，区分全量备份与筛选导出，并对导出应用同样上限。无新依赖、权限、后台消息、模型或网络请求。
+
+## 未发布：信任边界与规模加固
+
+后台启动时把 `storage.local` 限制为 `TRUSTED_CONTEXTS`；content script 只通过 `get-preferences` 读取偏好，`preferences-updated` 由后台按标签页广播。消息按来源分级：`items`/`export`/`delete` 移除，`test-api` 仅扩展页，`analyze`/`save`/`favorite-state` 允许 content script 与 `pdf.html`，并校验 `sender.id` 和网页收藏的来源一致性。`save` 复用 `normalizeFavoriteItem` 白名单与长度上限，网页收藏拒绝 `documentId`/`pageNumber`，PDF 编号必须是 64 位 SHA-256。
+
+`createShadowRootUi` 使用 `mode: 'closed'`；选区、双击、快捷键与保存按钮拒绝 `isTrusted === false` 的合成事件。请求超时降为 25 秒，`api-keepalive` 端口在请求期间保活，`requestId`/`cancel` 允许关闭卡片时中止后台请求。模型输出先从代码围栏或前后文中恢复 JSON 对象，再按字段上限校验；compatible endpoint 在 400/422 时用最小 OpenAI 兼容 body 重试一次，推理模型省略 temperature、改用 `max_completion_tokens`，局域网 HTTP 需在设置中显式允许。
+
+Dexie v4 为 `items` 增加 `termKey`、`contextKey` 与复合索引，升级时回填旧行；收藏查重、状态更新不再全表扫描。翻页进度改为 300ms debounce 并就地更新历史；关联词、筛选和计数使用 `useMemo`；设置页改为按需加载。content script 首次选区才挂载 Shadow DOM/React 树，上下文限制在最近 block 与 20k 字符窗口；PDF 文字层渲染后按 span 顺序写回 `pageText`，使选区偏移与文本层一致。

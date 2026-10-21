@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react';
-import type { ApiSettings } from './types';
-import { API_PRESETS, DEFAULT_API_SETTINGS, SETTINGS_KEY, providerForEndpoint, selectApiProvider, type ApiProvider } from './api-settings';
+import { API_PRESETS, DEFAULT_API_SETTINGS, SETTINGS_KEY, normalizeApiSettings, providerForEndpoint, selectApiProvider, type ApiProvider } from './api-settings';
 import { DEFAULT_PREFERENCES, PREFERENCES_KEY, normalizePreferences, parseSiteList, uiText, type ReaderPreferences } from './preferences';
+import { keepServiceWorkerAlive } from './keepalive';
 import './settings.css';
 
 export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: ReaderPreferences) => void; onCancel: () => void }) {
@@ -17,14 +17,14 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
   const t = uiText(preferences.uiLanguage);
   useEffect(() => {
     chrome.storage.local.get([SETTINGS_KEY, PREFERENCES_KEY]).then((stored) => {
-      const config = { ...DEFAULT_API_SETTINGS, ...(stored[SETTINGS_KEY] as Partial<ApiSettings> | undefined) };
+      const config = normalizeApiSettings(stored[SETTINGS_KEY]);
       setSettings(config);
       setProvider(providerForEndpoint(config.endpoint));
       const reader = normalizePreferences(stored[PREFERENCES_KEY]);
       setPreferences(reader); setAllowedSites(reader.allowedSites.join('\n')); setBlockedSites(reader.blockedSites.join('\n'));
     }).catch(() => setNotice('读取配置失败，请重新打开设置。')).finally(() => setLoading(false));
   }, []);
-  const change = (field: keyof ApiSettings) => (event: ChangeEvent<HTMLInputElement>) => {
+  const change = (field: 'endpoint' | 'model' | 'apiKey') => (event: ChangeEvent<HTMLInputElement>) => {
     const value = event.target.value;
     // Changing a destination must not carry a different provider's credential along.
     setSettings({ ...settings, [field]: value, ...(field === 'endpoint' ? { apiKey: '' } : {}) });
@@ -47,11 +47,12 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
   };
   const test = async () => {
     setBusy(true); setTestNotice(t('正在测试连接与解释格式…', 'Testing connection and response format…'));
+    const stopKeepAlive = keepServiceWorkerAlive();
     try {
       const result = await chrome.runtime.sendMessage({ type: 'test-api', settings });
       setTestNotice(result?.ok ? t('连接和解释格式正常。点击“保存并返回”后生效。', 'Connection and response format are valid. Save to apply.') : result?.error ?? t('测试失败，请重试。', 'Test failed. Please try again.'));
     } catch { setTestNotice(t('扩展连接中断，请重新加载扩展后重试。', 'Extension disconnected. Reload it and try again.')); }
-    finally { setBusy(false); }
+    finally { stopKeepAlive(); setBusy(false); }
   };
   return <section className="settings-form" lang={preferences.uiLanguage} aria-label={t('阅读设置', 'Reader settings')}>
     <p className="eyebrow">AI CONTEXT READER</p><h2>{t('让阅读按你的习惯来', 'Make reading your own')}</h2>
@@ -71,6 +72,8 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
         <label>{t('服务商', 'Provider')}<select value={provider} onChange={switchProvider}>{(Object.keys(API_PRESETS) as ApiProvider[]).map((id) => <option key={id} value={id}>{id === 'custom' ? t('自定义兼容接口', 'Custom compatible API') : id === 'minimax' ? t('MiniMax（国内）', 'MiniMax (China)') : id === 'minimaxIntl' ? t('MiniMax（国际）', 'MiniMax (International)') : API_PRESETS[id].label}</option>)}</select></label>
         <label>{t('API 地址', 'API endpoint')}<input value={settings.endpoint} onChange={change('endpoint')} readOnly={provider !== 'custom'} placeholder="https://example.com/v1" /></label>
         <label>{t('模型', 'Model')}<input value={settings.model} onChange={change('model')} placeholder={API_PRESETS[provider].model || t('填写平台的模型名称', 'Enter your provider model ID')} /></label>
+        <label className="setting-check"><input type="checkbox" checked={Boolean(settings.allowPrivateNetwork)} onChange={(event) => { setSettings({ ...settings, allowPrivateNetwork: event.target.checked }); setNotice(''); setTestNotice(''); }} />{t('允许本机/局域网 HTTP 接口（仅私有地址）', 'Allow local/LAN HTTP endpoints (private hosts only)')}</label>
+        <p className="hint">{t('仅对 localhost、私有 IPv4/IPv6 和 .local/.lan/.home/.internal 域名生效；公网地址仍必须使用 HTTPS。', 'Only localhost, private IPv4/IPv6, and .local/.lan/.home/.internal hosts. Public addresses still require HTTPS.')}</p>
         {provider === 'glm' && <p className="hint">{t('使用智谱开放平台的通用 API 密钥；模型可以改为你账户已开通的型号。', 'Use a standard Zhipu API key and a model available to your account.')}</p>}
         {provider === 'openrouter' && <p className="hint">{t('填写 OpenRouter 密钥和完整模型 ID，例如 openai/gpt-4o-mini。查询会经 OpenRouter 转交模型提供方；请选择支持 JSON 输出的模型。默认模型并非免费，不自动切换其他模型。', 'Use an OpenRouter key and a full model ID, such as openai/gpt-4o-mini. Queries pass through OpenRouter to the model provider. Choose a model supporting JSON output. The default is not free; no automatic model fallback is added.')}</p>}
         {(provider === 'minimax' || provider === 'minimaxIntl') && <p className="hint">{t('国内站和国际站请分别使用对应平台的通用 API 密钥。默认 MiniMax-M3 关闭思考；其他思考型号可能更慢、费用更高。模型名称可改为账户支持的型号，返回 JSON 后仍会校验。', 'Use the API key for the selected China or international platform. The default MiniMax-M3 disables thinking; other reasoning models may be slower and cost more. Model IDs remain editable, and returned JSON is always validated.')}</p>}

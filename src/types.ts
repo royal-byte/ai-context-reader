@@ -32,6 +32,9 @@ export type ReaderItem = Explanation & {
   status?: LearningStatus;
   documentId?: string;
   pageNumber?: number;
+  /** Indexed identity fields. Legacy rows get these during the Dexie v4 upgrade. */
+  termKey?: string;
+  contextKey?: string;
 };
 
 export type ReadingDocument = {
@@ -41,9 +44,9 @@ export type ReadingDocument = {
 export type DocumentFile = { id: string; data: ArrayBuffer };
 export type QueryHistory = { id?: number; text: string; sourceUrl: string; sourceTitle: string; pageNumber?: number; createdAt: number };
 
-export type ApiSettings = { endpoint: string; apiKey: string; model: string };
+export type ApiSettings = { endpoint: string; apiKey: string; model: string; allowPrivateNetwork?: boolean };
 
 export type AnalyzeRequest = {
   type: 'analyze'; text: string; context: string; sourceUrl: string; sourceTitle: string;
-  mode?: ReadingMode;
+  mode?: ReadingMode; requestId?: string;
 };

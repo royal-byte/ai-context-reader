@@ -1,51 +1,127 @@
 import { readerDb, saveItem, getFavoriteState, recordQuery } from '../src/db';
 import { requestExplanation } from '../src/api';
-import { demoExplanation } from '../src/validation';
-import type { ApiSettings, ReaderItem } from '../src/types';
-import { DEFAULT_API_SETTINGS, SETTINGS_KEY } from '../src/api-settings';
+import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '../src/validation';
+import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
 import { inferReadingMode, isReadingMode, minimalContext, validateSelection } from '../src/reading';
-import { loadPreferences, siteAllowed } from '../src/preferences';
+import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
 
-const settings = async () => ({ ...DEFAULT_API_SETTINGS, ...((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY] as Partial<ApiSettings> | undefined) });
+const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
+
+const extensionBase = () => typeof chrome.runtime.getURL === 'function' ? chrome.runtime.getURL('') : '';
+const isExtensionPage = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && Boolean(extensionBase()) && Boolean(sender.url?.startsWith(extensionBase()));
+const isContentPage = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && typeof sender.tab?.id === 'number' && /^https?:/i.test(sender.url ?? '');
+const fromReader = (sender: chrome.runtime.MessageSender) => isExtensionPage(sender) || isContentPage(sender);
+const samePage = (sourceUrl: string, senderUrl?: string) => {
+  if (!senderUrl) return false;
+  if (sourceUrl === senderUrl) return true;
+  try {
+    const source = new URL(sourceUrl);
+    const sender = new URL(senderUrl);
+    return source.origin === sender.origin && source.pathname === sender.pathname && source.search === sender.search;
+  } catch { return false; }
+};
 
 export default defineBackground(() => {
-  chrome.action.onClicked.addListener(() => { void openWorkspace(); });
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  // Keep the API key and BYOL settings out of content-script storage access.
+  // Content scripts receive only reader preferences through get-preferences.
+  try {
+    const access = chrome.storage.local.setAccessLevel?.({ accessLevel: 'TRUSTED_CONTEXTS' });
+    if (access) void access.catch(() => { /* Older browsers keep the default access level. */ });
+  } catch { /* setAccessLevel is unavailable; content scripts still use messaging. */ }
+  chrome.action.onClicked.addListener(() => { void openWorkspace().catch(() => { /* The tab API may be unavailable during shutdown. */ }); });
+
+  chrome.storage.onChanged?.addListener((changes, area) => {
+    if (area !== 'local' || !changes[PREFERENCES_KEY]) return;
+    const preferences = normalizePreferences(changes[PREFERENCES_KEY].newValue);
+    void chrome.tabs.query({}).then((tabs) => Promise.all(tabs.map((tab) => tab.id === undefined
+      ? undefined
+      : chrome.tabs.sendMessage(tab.id, { type: 'preferences-updated', preferences }).catch(() => undefined)))).catch(() => { /* No content script in a tab. */ });
+  });
+
+  chrome.runtime.onConnect?.addListener((port) => {
+    if (port.name !== 'api-keepalive') return;
+    port.onMessage.addListener(() => { /* Receiving a ping resets the worker idle timer. */ });
+  });
+
+  const pending = new Map<string, AbortController>();
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     void (async () => {
       try {
+        if (!sender.id || sender.id !== chrome.runtime.id) throw new Error('未授权的消息来源。 / Untrusted sender.');
+        if (message.type === 'get-preferences') {
+          sendResponse({ ok: true, preferences: await loadPreferences() });
+          return;
+        }
+        if (message.type === 'cancel') {
+          const requestId = typeof message.requestId === 'string' ? message.requestId : '';
+          pending.get(requestId)?.abort();
+          pending.delete(requestId);
+          sendResponse({ ok: true });
+          return;
+        }
+        if (message.type === 'test-api') {
+          if (!isExtensionPage(sender)) throw new Error('此操作仅允许在扩展页面中使用。 / This action is only available in extension pages.');
+          const config = normalizeApiSettings(message.settings ?? await settings());
+          await requestExplanation(config, 'resilient', 'A resilient system recovers after failure.', 'word', (await loadPreferences()).explanationLanguage);
+          sendResponse({ ok: true });
+          return;
+        }
         if (message.type === 'analyze') {
+          if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
           validateSelection(message.text);
           const preferences = await loadPreferences();
-          if (!siteAllowed(_sender.url ?? message.sourceUrl, preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
+          if (isContentPage(sender) && !siteAllowed(sender.url ?? '', preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
           const config = await settings();
           const mode = isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);
           const context = minimalContext(message.text, typeof message.context === 'string' ? message.context : '');
-          const explanation = config.apiKey ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage) : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
+          const requestId = typeof message.requestId === 'string' ? message.requestId : '';
+          const controller = requestId ? new AbortController() : undefined;
+          if (requestId && controller) pending.set(requestId, controller);
+          let explanation;
+          try {
+            explanation = config.apiKey.trim()
+              ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal)
+              : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
+          } finally {
+            if (requestId) pending.delete(requestId);
+          }
           let warning: string | undefined;
           if ((await loadPreferences()).saveQueryHistory) {
             try {
-              await recordQuery({ text: message.text, sourceUrl: message.sourceUrl, sourceTitle: message.sourceTitle, pageNumber: message.pageNumber, createdAt: Date.now() });
+              const sourceUrl = isContentPage(sender) ? sender.url ?? message.sourceUrl : message.sourceUrl;
+              const pageNumber = Number.isSafeInteger(message.pageNumber) && message.pageNumber >= 1 && message.pageNumber <= 1_000_000 ? message.pageNumber : undefined;
+              await recordQuery({ text: message.text, sourceUrl, sourceTitle: typeof message.sourceTitle === 'string' ? message.sourceTitle.slice(0, 1_000) : '', pageNumber, createdAt: Date.now() });
               await chrome.storage.local.set({ 'query-history-updated': Date.now() });
             } catch { warning = '解释已取得，但查询历史保存失败，请检查本机存储。 / Explanation ready, but query history could not be saved. Check local storage.'; }
           }
           sendResponse({ ok: true, explanation, warning });
-        } else if (message.type === 'favorite-state' || message.type === 'save') {
-          validateSelection(message.item?.selectedText);
-          if (typeof message.item.sourceUrl !== 'string' || typeof message.item.context !== 'string') throw new Error('收藏来源或语境无效。');
-          if (message.type === 'favorite-state') { sendResponse({ ok: true, state: await getFavoriteState(message.item) }); return; }
-          const item: ReaderItem = { ...message.item, uniqueKey: '', createdAt: Date.now() };
-          const saved = await saveItem(item);
+          return;
+        }
+        if (message.type === 'favorite-state' || message.type === 'save') {
+          if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
+          const preferences = await loadPreferences();
+          if (isContentPage(sender) && !siteAllowed(sender.url ?? '', preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
+          if (message.type === 'favorite-state') {
+            const query = normalizeFavoriteQuery(message.item);
+            if (isContentPage(sender) && !samePage(query.sourceUrl, sender.url)) throw new Error('收藏来源与当前页面不一致。 / The source does not match this page.');
+            sendResponse({ ok: true, state: await getFavoriteState(query) });
+            return;
+          }
+          const item = normalizeFavoriteItem(message.item);
+          if (isContentPage(sender) && !samePage(item.sourceUrl, sender.url)) throw new Error('收藏来源与当前页面不一致。 / The source does not match this page.');
+          const saved = await saveItem({ ...item, uniqueKey: '', createdAt: Date.now() });
           let warning: string | undefined;
           try { await chrome.storage.local.set({ 'library-updated': Date.now() }); }
           catch { warning = '收藏已保存，列表通知失败，请刷新工作台。 / Saved, but the library notification failed. Refresh the workspace.'; }
           sendResponse({ ok: true, ...saved, warning });
-        } else if (message.type === 'items') sendResponse({ ok: true, items: await readerDb.items.orderBy('createdAt').reverse().toArray() });
-        else if (message.type === 'delete') { await readerDb.items.delete(message.id); sendResponse({ ok: true }); }
-        else if (message.type === 'export') sendResponse({ ok: true, items: await readerDb.items.orderBy('createdAt').reverse().toArray() });
-        else if (message.type === 'test-api') { await requestExplanation(message.settings ?? await settings(), 'resilient', 'A resilient system recovers after failure.', 'word', (await loadPreferences()).explanationLanguage); sendResponse({ ok: true }); }
-        else sendResponse({ ok: false, error: '未知操作。' });
-      } catch (error) { sendResponse({ ok: false, error: error instanceof Error ? error.message : '发生未知错误。' }); }
+          return;
+        }
+        throw new Error('未知操作。 / Unknown action.');
+      } catch (error) {
+        try { sendResponse({ ok: false, error: error instanceof Error ? error.message : '发生未知错误。' }); }
+        catch { /* The message channel closed while the request was running. */ }
+      }
     })();
     return true;
   });

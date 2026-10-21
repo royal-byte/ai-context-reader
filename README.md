@@ -50,13 +50,13 @@
 | MiniMax（国内） | `https://api.minimax.cn/v1` | `MiniMax-M3` |
 | MiniMax（国际） | `https://api.minimax.io/v1` | `MiniMax-M3` |
 
-模型名称可编辑。GLM 使用智谱开放平台通用 API，Coding 套餐专用地址不属于本预设。自定义接口可填基础地址或完整的 `/chat/completions` 地址。
+模型名称可编辑。GLM 使用智谱开放平台通用 API，Coding 套餐专用地址不属于本预设。自定义接口可填基础地址或完整的 `/chat/completions` 地址。自定义接口可勾选“允许本机/局域网 HTTP 接口”，仅对 localhost、私有 IPv4/IPv6 和 `.local/.lan/.home/.internal` 域名生效；公网地址仍必须使用 HTTPS。
 
-默认 GLM 模型和 DeepSeek 请求关闭思考，返回 JSON 解释。请求超过 45 秒会给出超时提示；401/402/403/404/429 会分别提示密钥、余额、权限、模型或额度问题。真实解释会把选区和附近上下文发到所选服务商。清空密钥并保存可返回演示模式。
+默认 GLM 模型和 DeepSeek 请求关闭思考，返回 JSON 解释。请求超过 25 秒会给出超时提示；401/402/403/404/429 会分别提示密钥、余额、权限、模型或额度问题。真实解释会把选区和附近上下文发到所选服务商。清空密钥并保存可返回演示模式。
 
 OpenRouter 使用该平台的密钥和完整模型 ID；默认模型并非免费，查询会被转交所选模型的提供方。请求要求线路支持 JSON 参数，不自动改用其他模型；可手动选择账户可用且支持 JSON 的型号，免费/限流/数据政策以平台为准。不发送文章地址作为 HTTP-Referer。
 
-MiniMax 选择与密钥对应的国内/国际站。默认 `MiniMax-M3` 关闭思考；使用 `reasoning_split` 将思考与最终内容分开。OpenAI 兼容接口未明确记录 `response_format`，因此不强发此参数，而是使用 JSON 提示并复用严格字段校验。手动选择强制思考型号时不尝试关闭思考，预留有限思考预算；`MiniMax-M3.1-Flash` 使用低思考档位，仍受 45 秒超时限制。模型自行输出不合格 JSON 时拒绝结果，不伪造解释或自动重试。HTTP 200 内的 MiniMax 非零业务码也视为失败。
+MiniMax 选择与密钥对应的国内/国际站。默认 `MiniMax-M3` 关闭思考；使用 `reasoning_split` 将思考与最终内容分开。OpenAI 兼容接口未明确记录 `response_format`，因此不强发此参数，而是使用 JSON 提示并复用严格字段校验。手动选择强制思考型号时不尝试关闭思考，预留有限思考预算；`MiniMax-M3.1-Flash` 使用低思考档位，仍受 25 秒超时限制。模型自行输出不合格 JSON 时拒绝结果，不伪造解释或自动重试。HTTP 200 内的 MiniMax 非零业务码也视为失败。
 
 新增接口依据（2026-10-21 核对）：[OpenRouter 对话补全](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion)、[MiniMax 国内 OpenAI 兼容接口](https://platform.minimax.cn/docs/api-reference/text-openai-api)、[MiniMax 国际 OpenAI 兼容接口](https://platform.minimax.io/docs/api-reference/text-openai-api)。本轮使用模拟响应验证，无真实账户密钥连通测试。
 

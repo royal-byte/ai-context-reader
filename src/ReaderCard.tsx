@@ -4,6 +4,7 @@ import { inferReadingMode, minimalContext, sourceSentence } from './reading';
 import { DEFAULT_PREFERENCES, uiText, type ReaderPreferences } from './preferences';
 import type { Explanation, ReaderItem } from './types';
 import { formatPartOfSpeech, type FavoriteState } from './library';
+import { keepServiceWorkerAlive } from './keepalive';
 
 export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number };
 type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
@@ -11,7 +12,8 @@ type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: 
 export function ReaderCard({ selection, close, anchor, onSaved, preferences = DEFAULT_PREFERENCES, presentation = 'popup' }: Props) {
   const t = uiText(preferences.uiLanguage);
   const card = useRef<HTMLElement>(null);
-  const requestedMode = inferReadingMode(selection.text);
+  const { text, context, sourceUrl, sourceTitle, documentId, pageNumber } = selection;
+  const requestedMode = inferReadingMode(text);
   const [result, setResult] = useState<Explanation>();
   const mode = result?.mode ?? requestedMode;
   const [loading, setLoading] = useState(true);
@@ -21,36 +23,43 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const [retry, setRetry] = useState(0);
   const [existing, setExisting] = useState<FavoriteState>('new');
   const [checking, setChecking] = useState(false);
-  const sentence = sourceSentence(selection.text, selection.context);
+  const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
   useEffect(() => presentation === 'popup' && card.current ? dismissCardOnOutsidePress(card.current, close) : undefined, [close, presentation]);
   useEffect(() => {
     let active = true;
+    const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    const stopKeepAlive = keepServiceWorkerAlive();
     setLoading(true); setResult(undefined); setError('');
-    chrome.runtime.sendMessage({ type: 'analyze', ...selection, context: minimalContext(selection.text, selection.context), mode: requestedMode }).then((response) => {
+    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'analyze', text, context: minimalContext(text, context), sourceUrl, sourceTitle, documentId, pageNumber, mode: requestedMode, requestId })).then((response) => {
       if (!active) return;
       if (response?.ok) { setResult(response.explanation); if (response.warning) setError(response.warning); }
       else setError(response?.error ?? t('无法取得解释，请重试。', 'Could not get an explanation. Please retry.'));
     }).catch(() => { if (active) setError(t('扩展连接中断，请重新加载扩展并刷新网页。', 'Extension disconnected. Reload the extension and refresh this page.')); })
-      .finally(() => { if (active) setLoading(false); });
-    return () => { active = false; };
-  }, [selection, requestedMode, retry]);
+      .finally(() => { stopKeepAlive(); if (active) setLoading(false); });
+    return () => {
+      active = false;
+      stopKeepAlive();
+      try { void chrome.runtime.sendMessage({ type: 'cancel', requestId }).catch(() => { /* The request already finished. */ }); } catch { /* The extension was reloaded. */ }
+    };
+  }, [text, context, sourceUrl, sourceTitle, documentId, pageNumber, requestedMode, retry]);
 
   useEffect(() => {
     if (!result) return;
     let active = true;
     setChecking(true);
-    chrome.runtime.sendMessage({ type: 'favorite-state', item: { ...selection, ...result, mode, selectedText: selection.text, sourceSentence: sentence } }).then((response) => {
+    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'favorite-state', item: { selectedText: text, context, sourceUrl, sourceTitle, documentId, pageNumber, sourceSentence: sentence, ...result, mode } })).then((response) => {
       if (active && response?.ok) setExisting(response.state);
     }).catch(() => { /* Saving rechecks duplicates inside the database transaction. */ })
       .finally(() => { if (active) setChecking(false); });
     return () => { active = false; };
-  }, [result, selection, mode, sentence]);
+  }, [result, text, context, sourceUrl, sourceTitle, documentId, pageNumber, mode, sentence]);
 
-  const save = async () => {
+  const save = async (event?: { isTrusted?: boolean }) => {
+    if (event && event.isTrusted === false) return;
     if (!result || loading || saving) return;
     setSaving(true); setError('');
-    const item: Omit<ReaderItem, 'uniqueKey' | 'createdAt'> = { ...result, mode, selectedText: selection.text, context: selection.context, sourceSentence: sentence, sourceUrl: selection.sourceUrl, sourceTitle: selection.sourceTitle, documentId: selection.documentId, pageNumber: selection.pageNumber };
+    const item: Omit<ReaderItem, 'uniqueKey' | 'createdAt'> = { ...result, mode, selectedText: text, context, sourceSentence: sentence, sourceUrl, sourceTitle, documentId, pageNumber };
     try {
       const response = await chrome.runtime.sendMessage({ type: 'save', item });
       if (response?.ok) { setSaved(response.outcome ?? 'saved'); if (response.warning) setError(response.warning); onSaved?.(); }
@@ -62,7 +71,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const position = { width: size.width, maxHeight: `min(${size.height}px, calc(100dvh - 24px))`, ...(anchor ? { left: Math.max(12, Math.min(anchor.left, innerWidth - size.width - 24)), top: Math.max(12, Math.min(anchor.bottom + 12, innerHeight - size.height - 12)) } : { right: 16, bottom: 16 }) };
 
   return <aside ref={card} className={`acr-card${presentation === 'panel' ? ' acr-panel' : ''}`} lang={preferences.uiLanguage} style={presentation === 'popup' ? position : undefined} role={presentation === 'popup' ? 'dialog' : 'region'} aria-label={t('上下文阅读助手', 'Context reader')} onKeyDown={(event) => { if (event.key === 'Escape') close(); }}>
-    <header className="acr-header"><div><h2>{shortSelection ? (result?.lemma || selection.text) : t('阅读助手', 'Reading assistant')}</h2>{mode === 'word' && result?.phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{result.phonetic}</span></p>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}>×</button></header>
+    <header className="acr-header"><div><h2>{shortSelection ? (result?.lemma || text) : t('阅读助手', 'Reading assistant')}</h2>{mode === 'word' && result?.phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{result.phonetic}</span></p>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}>×</button></header>
     <div className="acr-body" aria-busy={loading}>
       {result?.register === 'demo' && <p className="acr-demo">{t('演示内容 · 配置 API 后获取真实解释', 'Demo · Connect an API for real explanations')}</p>}
       {loading && <p className="acr-loading" role="status">{t('正在结合上下文理解…', 'Understanding in context…')}</p>}

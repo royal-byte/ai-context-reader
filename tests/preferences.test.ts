@@ -13,6 +13,17 @@ it('normalizes hostnames without accepting credentials, paths or malformed hosts
   expect(() => parseSiteList(Array(101).fill('example.com').join('\n'))).toThrow();
 });
 
+it('drops corrupt stored site entries instead of throwing and disabling the reader', () => {
+  expect(normalizePreferences({
+    allowedSites: ['Example.COM', 'https://bad.example/private', 42, '*.news.example.org'],
+    blockedSites: Array(101).fill('example.com')
+  })).toMatchObject({
+    allowedSites: ['example.com', 'news.example.org'],
+    blockedSites: ['example.com']
+  });
+  expect(normalizePreferences({ allowedSites: 'not-an-array', blockedSites: null }).allowedSites).toEqual([]);
+});
+
 it('enforces exclusions first and respects real hostname boundaries', () => {
   const preferences = { ...DEFAULT_PREFERENCES, siteMode: 'allowlist' as const, allowedSites: ['example.com'], blockedSites: ['private.example.com'] };
   expect(siteAllowed('https://news.example.com/story', preferences)).toBe(true);

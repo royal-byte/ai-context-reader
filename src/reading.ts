@@ -4,6 +4,11 @@ import type { ReadingMode } from './types';
 export const SOFT_SELECTION_LIMIT = 1500;
 export const MAX_SELECTION_LENGTH = 3000;
 export const MAX_CONTEXT_LENGTH = 1000;
+/** Cap the text copied from a page before sentence segmentation. */
+export const MAX_CONTEXT_SOURCE = 20_000;
+const sentenceSegmenter = new Intl.Segmenter('en', { granularity: 'sentence' });
+const wordSegmenter = new Intl.Segmenter('en', { granularity: 'word' });
+export const sentenceSegments = (text: string) => [...sentenceSegmenter.segment(text)];
 export const cleanSelection = (text: string) => text.replace(/\s+/g, ' ').trim();
 export function validateSelection(text: unknown): asserts text is string {
   if (typeof text !== 'string' || !text.trim()) throw new Error('请选择要解释的文字。 / Select text to explain.');
@@ -13,7 +18,7 @@ export function validateSelection(text: unknown): asserts text is string {
 export function minimalContext(text: string, context: string, index = context.indexOf(text)): string {
   const mode = inferReadingMode(text);
   if (mode === 'paragraph' || mode === 'sentence' || index < 0) return text;
-  const sentences = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(context)];
+  const sentences = sentenceSegments(context);
   const enclosing = sentences.find((part) => part.index <= index && part.index + part.segment.length >= index + text.length);
   if (enclosing && enclosing.segment.length <= MAX_CONTEXT_LENGTH) return enclosing.segment.trim();
   // ponytail: unusually long sentences use a bounded local window; no full-article fallback.
@@ -33,8 +38,8 @@ export function isReadingMode(value: unknown): value is ReadingMode {
 }
 
 export function inferReadingMode(text: string): ReadingMode {
-  const sentences = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(text.trim())];
-  const words = [...new Intl.Segmenter('en', { granularity: 'word' }).segment(text)].filter((part) => part.isWordLike);
+  const sentences = sentenceSegments(text.trim());
+  const words = [...wordSegmenter.segment(text)].filter((part) => part.isWordLike);
   // ponytail: punctuation/length are heuristics; move classification into the model if ambiguous selections warrant it.
   if (sentences.length > 1) return 'paragraph';
   if (/[.!?。！？]["'”’)]?$/.test(text.trim()) || words.length > 12) return 'sentence';
@@ -42,6 +47,6 @@ export function inferReadingMode(text: string): ReadingMode {
 }
 
 export function sourceSentence(text: string, context: string): string {
-  const sentences = [...new Intl.Segmenter('en', { granularity: 'sentence' }).segment(context)];
+  const sentences = sentenceSegments(context);
   return sentences.find(({ segment }) => segment.includes(text))?.segment.trim() ?? (context.trim() || text.trim());
 }

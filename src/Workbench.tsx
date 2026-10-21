@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react';
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { readerDb, restoreItems } from './db';
@@ -8,11 +8,13 @@ import { clampPage, collectionKind, contextKey, favoriteKey, formatPartOfSpeech,
 import { PdfPage } from './PdfPage';
 import { ReaderCard, type ReadingSelection } from './ReaderCard';
 import { SelectionReader, selectionIntent, opensImmediately } from './SelectionReader';
-import { SettingsForm } from './SettingsForm';
 import type { CollectionKind, LearningStatus, ReaderItem, ReadingDocument, QueryHistory } from './types';
-import { cleanSelection, minimalContext, MAX_SELECTION_LENGTH } from './reading';
+import { cleanSelection, MAX_SELECTION_LENGTH } from './reading';
 import { isEditableTarget, loadPreferences, matchesReaderShortcut, uiText, useReaderPreferences } from './preferences';
+import { windowContext } from './selection';
 
+// Settings are rarely used; load the form on demand instead of the PDF first paint.
+const SettingsForm = lazy(() => import('./SettingsForm').then((module) => ({ default: module.SettingsForm })));
 GlobalWorkerOptions.workerSrc = workerUrl;
 type View = 'reading' | 'library' | 'history';
 type Pick = ReadingSelection & { anchor: { left: number; bottom: number }; immediate: boolean; confirmed?: boolean };
@@ -122,7 +124,16 @@ export function Workbench() {
   useEffect(() => {
     setPick(undefined); setExplaining(undefined);
     if (!document || !ready || !preferences.saveReadingProgress) return;
-    void readerDb.documents.update(document.id, { currentPage: page, zoom }).then(refreshHistory).catch(() => setNotice(t("阅读进度保存失败，请检查本机存储。", "Could not save progress. Check local storage.")));
+    let active = true;
+    // Page turns used to re-read every document and 200 queries. Debounce the
+    // write and update the visible history in place instead.
+    const timer = setTimeout(() => {
+      void readerDb.documents.update(document.id, { currentPage: page, zoom }).then(() => {
+        if (!active) return;
+        setHistory((current) => current.map((entry) => entry.id === document.id ? { ...entry, currentPage: page, zoom } : entry));
+      }).catch(() => { if (active) setNotice(t("阅读进度保存失败，请检查本机存储。", "Could not save progress. Check local storage.")); });
+    }, 300);
+    return () => { active = false; clearTimeout(timer); };
   }, [document, page, zoom, ready, preferences.saveReadingProgress]);
 
   useEffect(() => { setPick(undefined); setExplaining(undefined); }, [preferences]);
@@ -154,9 +165,11 @@ export function Workbench() {
     const startSpan = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest('span');
     const startSpanIndex = spans.findIndex((span) => span === startSpan);
     const prefixLength = startSpanIndex < 0 ? 0 : spans.slice(0, startSpanIndex).map((span) => span.textContent ?? '').join(' ').length;
-    const index = all.indexOf(text, Math.max(0, prefixLength - 1));
+    let index = all.indexOf(text, Math.max(0, prefixLength - 1));
+    if (index < 0) index = all.indexOf(text);
     const rect = range.getBoundingClientRect();
-    const selection = { text, context: text.length > MAX_SELECTION_LENGTH ? '' : minimalContext(text, all, index), sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
+    const context = text.length > MAX_SELECTION_LENGTH ? '' : windowContext(all, text, index).context;
+    const selection = { text, context, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
     if (opensImmediately(text, selection.immediate, confirmed, preferences)) explain(selection);
     else setPick(selection);
     return true;
@@ -165,8 +178,7 @@ export function Workbench() {
     if (!item.id) return;
     try {
       await readerDb.transaction('rw', readerDb.items, async () => {
-        const records = await readerDb.items.toArray();
-        for (const record of records) if (record.id && favoriteKey(record) === favoriteKey(item)) await readerDb.items.update(record.id, { status: value });
+        await readerDb.items.where('termKey').equals(favoriteKey(item)).modify((record) => { record.status = value; });
       });
       await refreshLibrary();
     }
@@ -183,10 +195,10 @@ export function Workbench() {
     } else if (/^https?:\/\//.test(item.sourceUrl)) await chrome.tabs.create({ url: item.sourceUrl });
     else setNotice(t("这是一条旧的本地记录，请从阅读历史重新打开原文。", "This is an older local record. Reopen the original from history."));
   };
-  const scopedRecords = items.filter((item) => view === 'library' || scope === 'all' || !document || item.documentId === document.id);
-  const scopedItems = groupFavorites(scopedRecords);
-  const relatedItem = scopedItems.find((item) => favoriteKey(item) === relatedFor);
-  const related = relatedItem ? relatedVocabulary(relatedItem, scopedRecords) : [];
+  const scopedRecords = useMemo(() => items.filter((item) => view === 'library' || scope === 'all' || !document || item.documentId === document.id), [items, view, scope, document]);
+  const scopedItems = useMemo(() => groupFavorites(scopedRecords), [scopedRecords]);
+  const relatedItem = useMemo(() => scopedItems.find((item) => favoriteKey(item) === relatedFor), [scopedItems, relatedFor]);
+  const related = useMemo(() => relatedItem ? relatedVocabulary(relatedItem, scopedRecords) : [], [relatedItem, scopedRecords]);
   const revealRelated = (item: ReaderItem) => {
     setQuery(''); setStatus('all');
     requestAnimationFrame(() => {
@@ -194,13 +206,13 @@ export function Workbench() {
       if (accordion) { accordion.open = true; accordion.querySelector<HTMLElement>('summary')?.focus(); accordion.scrollIntoView({ block: 'nearest' }); }
     });
   };
-  const vocabularyCounts = scopedItems.reduce((counts, item) => {
+  const vocabularyCounts = useMemo(() => scopedItems.reduce((counts, item) => {
     if (collectionKind(item) === 'vocabulary') { counts.all++; counts[item.status ?? 'new']++; }
     return counts;
-  }, { all: 0, new: 0, reviewing: 0, mastered: 0 });
-  const filtered = scopedItems.filter((item) => collectionKind(item) === kind)
+  }, { all: 0, new: 0, reviewing: 0, mastered: 0 }), [scopedItems]);
+  const filtered = useMemo(() => scopedItems.filter((item) => collectionKind(item) === kind)
     .filter((item) => status === 'all' || kind === 'excerpt' || (item.status ?? 'new') === status)
-    .filter((item) => item.contexts.some((context) => `${context.selectedText} ${context.lemma ?? ''} ${context.definition} ${context.translation}`.toLowerCase().includes(query.trim().toLowerCase())));
+    .filter((item) => item.contexts.some((context) => `${context.selectedText} ${context.lemma ?? ''} ${context.definition} ${context.translation}`.toLowerCase().includes(query.trim().toLowerCase()))), [scopedItems, kind, status, query]);
   const hasFilter = Boolean(query.trim()) || (kind === 'vocabulary' && status !== 'all');
   const downloadItems = (records: ReaderItem[], filename: string) => {
     try {
@@ -283,7 +295,7 @@ export function Workbench() {
       {view === 'library' && <section className="library-page">{pendingRestore && restorePlan && <section className="restore-preview" ref={restorePreview} tabIndex={-1} aria-labelledby="restore-heading" onKeyDown={(event) => { if (event.key === 'Escape' && !restoreBusy) cancelRestore(); }}><h2 id="restore-heading">{t('恢复备份预览', 'Restore preview')}</h2><p className="restore-filename">{pendingRestore.name}</p><p>{t(`备份包含 ${pendingRestore.items.length} 条语境，预计新增 ${restorePlan.additions.length} 条、跳过 ${restorePlan.skipped} 条重复内容。`, `The backup contains ${pendingRestore.items.length} contexts: ${restorePlan.additions.length} expected additions, ${restorePlan.skipped} duplicates.`)}</p><p>{t('只合并新增语境，不覆盖已有收藏和学习状态。不恢复 API Key、阅读设置或原 PDF 文件；本机缺少的 PDF 需要重新打开。', 'Adds new contexts without replacing favorites or learning states. API keys, settings and PDF files are not restored. Reopen missing PDFs locally.')}</p><div className="restore-actions"><button className="primary-button" disabled={restoreBusy} onClick={() => { void confirmRestore(); }}>{restoreBusy ? t('正在恢复…', 'Restoring…') : t('确认恢复', 'Confirm restore')}</button><button disabled={restoreBusy} onClick={cancelRestore}>{t('取消，不恢复', 'Cancel restore')}</button></div></section>}{collection}</section>}
       {view === 'history' && <section className="history-page"><p className="page-intro">{t('你的文件和历史只留在这台设备上。关闭历史不会删除已有记录或收藏。', 'Files and history stay on this device. Turning history off does not delete existing records or favorites.')}</p><h2>{t('本地 PDF', 'Local PDFs')}</h2><p className="page-intro">{preferences.saveReadingProgress ? t('正在保存阅读进度。', 'Reading progress is enabled.') : t('阅读进度保存已关闭；新打开文件只在当前页面保留。', 'Progress saving is off. Newly opened files stay in this tab only.')}</p>{history.length ? history.map((entry) => <button key={entry.id} className="history-item" onClick={() => { void reopen(entry); }}><span className="history-icon" aria-hidden="true">▤</span><div><h2>{entry.name}</h2><p>{t('页码', 'Page')} {entry.currentPage} / {entry.pageCount} · {new Date(entry.lastOpenedAt).toLocaleDateString(preferences.uiLanguage)}</p></div><span>{t('继续阅读 →', 'Continue reading →')}</span></button>) : <div className="history-empty">{t('还没有已保存的 PDF 阅读记录。', 'No saved PDF history yet.')}</div>}<h2>{t('查询历史', 'Query history')}</h2><p className="page-intro">{preferences.saveQueryHistory ? t('仅记录成功查询，最多保留最近 200 条。', 'Only successful queries are saved, up to 200 recent entries.') : t('查询历史保存已关闭。主动收藏不受影响。', 'Query history is off. Favorites are unaffected.')}</p>{queries.length ? queries.map((entry) => <article className="history-item" key={entry.id}><div><h2>{entry.text}</h2><p>{entry.sourceTitle}{entry.pageNumber ? ` · ${t('页码', 'Page')} ${entry.pageNumber}` : ''} · {new Date(entry.createdAt).toLocaleString(preferences.uiLanguage)}</p><p>{entry.sourceUrl}</p></div></article>) : <div className="history-empty">{t('没有查询历史。', 'No query history.')}</div>}</section>}
       </div>
-      {settingsOpen && <div className="settings-page"><SettingsForm onSaved={(savedPreferences) => { returnFromSettings(); setNotice(uiText(savedPreferences.uiLanguage)('设置已保存，后续取词将使用新设置。', 'Settings saved. New queries will use these preferences.')); }} onCancel={returnFromSettings} /></div>}
+      {settingsOpen && <div className="settings-page"><Suspense fallback={<p className="settings-loading" role="status">{t('正在加载设置…', 'Loading settings…')}</p>}><SettingsForm onSaved={(savedPreferences) => { returnFromSettings(); setNotice(uiText(savedPreferences.uiLanguage)('设置已保存，后续取词将使用新设置。', 'Settings saved. New queries will use these preferences.')); }} onCancel={returnFromSettings} /></Suspense></div>}
     </main>
     {view === 'reading' && <aside className="collection-sidebar" hidden={settingsOpen || !sideOpen}><div className="reader-side-tabs" role="group" aria-label={t('阅读侧栏', 'Reading sidebar')}><button aria-pressed={sideTab === 'explanation'} onClick={() => setSideTab('explanation')}>{t('解释', 'Explanation')}</button><button aria-pressed={sideTab === 'library'} onClick={() => setSideTab('library')}>{t('生词库', 'Library')}</button></div><div className="explanation-panel" hidden={sideTab !== 'explanation'}>{explaining ? <ReaderCard key={JSON.stringify(explaining)} presentation="panel" selection={explaining} preferences={preferences} close={() => { setExplaining(undefined); setSideTab('library'); }} onSaved={() => { void refreshLibrary().catch(() => setNotice(t('更新收藏列表失败，请刷新。', 'Could not refresh the library. Please reload.'))); }} /> : <div className="explanation-empty"><span aria-hidden="true">Aa</span><h2>{t('在原文中选词，理解它。', 'Select text to understand it.')}</h2><p>{t('双击单词直接解释；拖选后点击“解释”。仅复制不会发起查询。', 'Double-click a word, or select text and choose Explain. Copying alone sends no query.')}</p></div>}</div><div className="sidebar-library" hidden={sideTab !== 'library'}><header><h2>{kind === 'vocabulary' ? t('我的生词库', 'My vocabulary') : t('我的摘录', 'My excerpts')}</h2><p>{t('点击卡片展开详情', 'Expand a card for details')}</p></header>{collection}</div></aside>}
     {pick && view === 'reading' && <SelectionReader key={`${pick.text}\n${pick.pageNumber}\n${pick.immediate}\n${pick.confirmed}`} selection={pick} anchor={pick.anchor} immediate={pick.immediate} confirmed={pick.confirmed} preferences={preferences} close={() => setPick(undefined)} onExplain={() => explain(pick)} />}

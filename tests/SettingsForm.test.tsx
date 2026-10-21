@@ -66,6 +66,7 @@ it('offers the new providers and keeps provider routing and key guidance visible
   expect(markup).toContain('value="openrouter"');
   expect(markup).toContain('value="minimax"');
   expect(markup).toContain('value="minimaxIntl"');
+  expect(markup).toContain('允许本机/局域网 HTTP 接口');
 });
 
 it.each(['连接和解释格式正常。点击“保存并返回”后生效。', 'API 请求失败（429）。', '正在测试连接与解释格式…'])('places test feedback beside the connection button, not at the form footer (%s)', (message) => {
