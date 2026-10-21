@@ -3,8 +3,9 @@ import { DEFAULT_PREFERENCES, matchesReaderShortcut, normalizePreferences, parse
 
 it('defaults to no query history, a separate PDF progress switch, and no shortcut', () => {
   expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
-  expect(DEFAULT_PREFERENCES).toMatchObject({ saveQueryHistory: false, saveReadingProgress: true, shortcut: 'off' });
+  expect(DEFAULT_PREFERENCES).toMatchObject({ saveQueryHistory: false, saveReadingProgress: true, shortcut: 'off', englishOnly: true });
   expect(normalizePreferences({ apiKey: 'must-not-copy', trigger: 'invalid', popupSize: 'compact' })).toEqual({ ...DEFAULT_PREFERENCES, popupSize: 'compact' });
+  expect(normalizePreferences({ englishOnly: false }).englishOnly).toBe(false);
 });
 
 it('normalizes hostnames without accepting credentials, paths or malformed hosts', () => {

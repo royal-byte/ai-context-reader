@@ -11,6 +11,7 @@
 - Sort favorites by recent, alphabetical or learning status; search explanations, source sentences and titles.
 - Disable the reader on the current site from the card footer.
 - Cache successful explanations locally for 7 days (up to 500 entries), invalidated when API settings change.
+- Add a default-on English-only gate: non-English selections show no Explain button and send no model request; it can be disabled in settings.
 - Speak English words with the browser's built-in voice (no network or extra permission).
 
 ### Release and engineering

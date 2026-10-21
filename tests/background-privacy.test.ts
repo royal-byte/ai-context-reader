@@ -60,6 +60,20 @@ it('adds the current page host to the blocked site list', async () => {
   });
 });
 
+it('does not send non-English selections while english-only is enabled', async () => {
+  const result = await send({ ...message, text: '这是一段中文内容。', context: '这是一段中文内容。' });
+  expect(result.ok).toBe(false);
+  expect(result.error).toContain('英文');
+  expect(requestExplanation).not.toHaveBeenCalled();
+});
+
+it('can explain non-English selections when the language gate is disabled', async () => {
+  preferences = { ...preferences, englishOnly: false };
+  const result = await send({ ...message, text: '这是一段中文内容。', context: '这是一段中文内容。' });
+  expect(result.ok).toBe(true);
+  expect(requestExplanation).toHaveBeenCalledOnce();
+});
+
 it('defaults to no query log and strips unrelated context and source metadata from model calls', async () => {
   expect((await send()).ok).toBe(true);
   expect(requestExplanation).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'test-only-key' }), 'target', 'This target matters.', 'word', 'zh-CN', undefined);

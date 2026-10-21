@@ -4,6 +4,7 @@ import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '
 import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
 import type { Explanation } from '../src/types';
 import { inferReadingMode, isReadingMode, minimalContext, validateSelection } from '../src/reading';
+import { isLikelyEnglish } from '../src/language';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
 import { explanationCacheKey, readCachedExplanation, writeCachedExplanation } from '../src/cache';
@@ -86,6 +87,7 @@ export default defineBackground(() => {
           if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
           validateSelection(message.text);
           const preferences = await loadPreferences();
+          if (preferences.englishOnly && !isLikelyEnglish(message.text)) throw new Error('当前设置为仅解释英文内容，可在设置中关闭。 / English selections only is enabled; turn it off in settings to explain other languages.');
           if (isContentPage(sender) && !siteAllowed(sender.url ?? '', preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
           const config = await settings();
           const mode = isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);

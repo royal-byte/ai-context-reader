@@ -2,6 +2,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { SelectionReader, selectionIntent } from '../src/SelectionReader';
 import { contextForRange } from '../src/selection';
+import { isLikelyEnglish } from '../src/language';
 import { cleanSelection, MAX_SELECTION_LENGTH } from '../src/reading';
 import {
   DEFAULT_PREFERENCES, isEditableTarget, loadPreferences, matchesReaderShortcut, normalizePreferences,
@@ -75,6 +76,7 @@ export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], css
   const open = (selection: Selection | null) => {
     if (!selection) { show?.(null); return; }
     if (!ready || !siteAllowed(location.href, preferences)) return;
+    if (preferences.englishOnly && !isLikelyEnglish(selection.text)) return;
     void ensureUi().then(() => {
       if (show) show(selection); else pending = selection;
     }).catch(() => { /* A page can forbid custom elements; leave the reader inactive. */ });
@@ -88,7 +90,7 @@ export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], css
     const intent = selectionIntent(event);
     if (!intent) return;
     const selected = selectionAt(intent === 'explain');
-    if (selected) open(selected);
+    if (selected && (!preferences.englishOnly || isLikelyEnglish(selected.text))) open(selected);
   };
   ctx.addEventListener(document, 'dblclick', capture);
   ctx.addEventListener(document, 'mouseup', capture);
@@ -96,7 +98,7 @@ export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], css
     if (!event.isTrusted || (uiHost && event.composedPath().includes(uiHost)) || isEditableTarget(event.target)) return;
     if (!ready || !siteAllowed(location.href, preferences) || !matchesReaderShortcut(event, preferences.shortcut)) return;
     const selected = selectionAt(false);
-    if (selected) { event.preventDefault(); open({ ...selected, confirmed: true }); }
+    if (selected && (!preferences.englishOnly || isLikelyEnglish(selected.text))) { event.preventDefault(); open({ ...selected, confirmed: true }); }
   });
 }});
 

@@ -66,6 +66,7 @@ it('offers the new providers and keeps provider routing and key guidance visible
   expect(markup).toContain('value="openrouter"');
   expect(markup).toContain('value="minimax"');
   expect(markup).toContain('value="minimaxIntl"');
+  expect(markup).toContain('只对英文选区触发');
   expect(markup).toContain('允许本机/局域网 HTTP 接口');
 });
 

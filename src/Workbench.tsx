@@ -14,6 +14,7 @@ import { cleanSelection, MAX_SELECTION_LENGTH } from './reading';
 import { isEditableTarget, loadPreferences, matchesReaderShortcut, uiText, useReaderPreferences } from './preferences';
 import { windowContext } from './selection';
 import { toAnkiTsv, toCsv } from './export';
+import { isLikelyEnglish } from './language';
 
 // Settings are rarely used; load the form on demand instead of the PDF first paint.
 const SettingsForm = lazy(() => import('./SettingsForm').then((module) => ({ default: module.SettingsForm })));
@@ -163,6 +164,7 @@ export function Workbench() {
     if (!paper?.contains(range.startContainer) || !paper.contains(range.endContainer)) return false;
     const text = cleanSelection(selected.toString());
     if (!text) return false;
+    if (preferences.englishOnly && !isLikelyEnglish(text)) return false;
     const all = (paper as HTMLElement).dataset.pageText ?? text;
     const spans = [...paper.querySelectorAll('.textLayer span')];
     const startSpan = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest('span');

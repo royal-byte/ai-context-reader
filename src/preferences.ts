@@ -4,6 +4,7 @@ export type ReaderPreferences = {
   uiLanguage: 'zh-CN' | 'en';
   explanationLanguage: 'zh-CN' | 'en';
   trigger: 'quick' | 'confirm';
+  englishOnly: boolean;
   popupSize: 'compact' | 'medium' | 'large';
   shortcut: 'off' | 'alt-shift-e' | 'alt-shift-x';
   saveQueryHistory: boolean;
@@ -14,7 +15,7 @@ export type ReaderPreferences = {
 };
 export const PREFERENCES_KEY = 'reader-preferences';
 export const DEFAULT_PREFERENCES: ReaderPreferences = {
-  uiLanguage: 'zh-CN', explanationLanguage: 'zh-CN', trigger: 'quick', popupSize: 'medium',
+  uiLanguage: 'zh-CN', explanationLanguage: 'zh-CN', trigger: 'quick', englishOnly: true, popupSize: 'medium',
   shortcut: 'off', saveQueryHistory: false, saveReadingProgress: true,
   siteMode: 'all', allowedSites: [], blockedSites: []
 };
@@ -54,7 +55,7 @@ export function normalizePreferences(value: unknown): ReaderPreferences {
     const choices: Record<typeof key, readonly string[]> = { uiLanguage: ['zh-CN', 'en'], explanationLanguage: ['zh-CN', 'en'], trigger: ['quick', 'confirm'], popupSize: ['compact', 'medium', 'large'], shortcut: ['off', 'alt-shift-e', 'alt-shift-x'], siteMode: ['all', 'allowlist'] };
     if (typeof input[key] === 'string' && choices[key].includes(input[key] as string)) Object.assign(result, { [key]: input[key] });
   }
-  for (const key of ['saveQueryHistory', 'saveReadingProgress'] as const) if (typeof input[key] === 'boolean') result[key] = input[key];
+  for (const key of ['saveQueryHistory', 'saveReadingProgress', 'englishOnly'] as const) if (typeof input[key] === 'boolean') result[key] = input[key];
   result.allowedSites = safeSiteList(input.allowedSites);
   result.blockedSites = safeSiteList(input.blockedSites);
   return result;
