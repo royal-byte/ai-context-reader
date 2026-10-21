@@ -1,0 +1,40 @@
+:host { all: initial; }
+.acr-card { --acr-text: #252a29; --acr-muted: #6b726f; --acr-line: #e7ebe8; --acr-accent: #28735a; position: fixed; z-index: 2147483647; display: flex; flex-direction: column; width: 380px; max-width: calc(100vw - 24px); max-height: min(560px, calc(100dvh - 24px)); box-sizing: border-box; color: var(--acr-text); background: #fff; border: 1px solid var(--acr-line); border-radius: 16px; box-shadow: 0 14px 48px #18271f26, 0 2px 8px #18271f0a; font: 14px/1.65 'Segoe UI', 'Microsoft YaHei', sans-serif; text-align: left; color-scheme: light; }
+.acr-card * { box-sizing: border-box; }
+.acr-card button, .acr-card summary { font: inherit; cursor: pointer; }
+.acr-card p, .acr-card h2, .acr-card h3 { margin: 0; }
+.acr-header { display: flex; flex-shrink: 0; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 18px 20px 13px; margin: 0; border: 0; }
+.acr-header h2 { font: 700 25px/1.25 Georgia, 'Times New Roman', 'Microsoft YaHei', serif; overflow-wrap: anywhere; max-height: 64px; overflow: auto; }
+.acr-header > div { min-width: 0; }
+.acr-header .acr-phonetic { margin-top: 5px; color: var(--acr-muted); font: 15px/1.5 'Segoe UI', 'Lucida Sans Unicode', sans-serif; overflow-wrap: anywhere; }
+.acr-phonetic-label { font: 11px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif; margin-right: 3px; }
+.acr-close { flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: #858b87; font-size: 21px !important; line-height: 1; }
+.acr-close:hover { background: #f0f3f1; color: #252a29; }
+.acr-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 18px 2px; scrollbar-width: thin; scrollbar-color: #c5cdc8 transparent; }
+.acr-body h3 { font-size: 13px; font-weight: 650; color: #343c37; line-height: 1.5; }
+.acr-standard, .acr-context { padding: 12px 14px; border-radius: 11px; margin-bottom: 10px; }
+.acr-standard { background: #f5f6f5; }
+.acr-context { background: #edf7f0; }
+.acr-standard p, .acr-context p { margin-top: 5px; overflow-wrap: anywhere; }
+.acr-pos { color: var(--acr-muted); }
+.acr-ai { display: inline-block; background: #e4edff; color: #386db8; border-radius: 4px; padding: 0 5px; margin-left: 5px; font: 600 10px/1.65 'Segoe UI', sans-serif; vertical-align: 1px; }
+.acr-translation { padding: 5px 10px 10px; }
+.acr-translation p { margin-top: 5px; color: #626964; overflow-wrap: anywhere; }
+.acr-details { margin: 3px 10px 10px; font-size: 13px; }
+.acr-details summary { color: var(--acr-muted); padding: 4px 0; }
+.acr-details p { margin-top: 8px; overflow-wrap: anywhere; white-space: pre-wrap; }
+.acr-details ul { padding-left: 20px; margin: 8px 0; }
+.acr-details li { margin: 5px 0; }
+.acr-details li::marker { color: var(--acr-accent); }
+.acr-footer { flex-shrink: 0; padding: 12px 18px 16px; }
+.acr-save { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; min-height: 46px; border: 0; border-radius: 12px; padding: 10px 14px; background: #315a46; color: #fff; font-weight: 600 !important; }
+.acr-save-icon { display: inline-grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid currentColor; border-radius: 50%; font-size: 18px; line-height: 1; }
+.acr-save:hover:not(:disabled) { background: #244936; }
+.acr-save:disabled { background: #edf3ee; color: #42644d; cursor: default; }
+.acr-footer .acr-save-hint { margin: 10px 0 0; color: #626e66; text-align: center; font-size: 12px; line-height: 1.6; }
+.acr-loading { color: var(--acr-muted); padding: 12px 2px 20px; font-size: 13px; }
+.acr-demo { color: var(--acr-muted); font-size: 11px; padding: 0 3px 10px; }
+.acr-error { color: #984a42; padding: 10px 2px; font-size: 13px; }
+.acr-error button { border: 1px solid #d7bbb6; border-radius: 5px; color: #984a42; background: #fff; margin-top: 8px; padding: 3px 12px; }
+.acr-card button:focus-visible, .acr-card summary:focus-visible { outline: 2px solid var(--acr-accent); outline-offset: 3px; }
+@media (max-height: 400px) { .acr-header { padding-top: 10px; padding-bottom: 8px; } .acr-footer { padding-top: 8px; padding-bottom: 10px; } }

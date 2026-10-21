@@ -1,0 +1,15 @@
+.settings-form { width: 100%; max-width: 680px; margin: 0 auto; padding: 36px 28px; color: #2b302c; font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif; box-sizing: border-box; }
+.settings-form .eyebrow { color: #2f6654; font-size: 12px; letter-spacing: 1.2px; margin: 0 0 12px; }
+.settings-form h2 { font: 600 28px/1.4 'Segoe UI', 'Microsoft YaHei', sans-serif; margin: 0 0 16px; }
+.settings-form > p { font-size: 16px; line-height: 1.8; color: #596453; }
+.settings-form label { display: block; margin: 24px 0; font-size: 15px; font-weight: 600; }
+.settings-form input, .settings-form select { width: 100%; box-sizing: border-box; margin-top: 8px; padding: 11px; border: 1px solid #dce2d4; border-radius: 7px; background: #fff; color: #2b302c; font: inherit; }
+.settings-form input[readonly] { background: #f0f3eb; color: #596453; }
+.settings-form fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.settings-form .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 26px 0 20px; }
+.settings-form button { min-height: 44px; padding: 11px 16px; border: 1px solid #344c3c; border-radius: 7px; background: #344c3c; color: #fff; font: inherit; font-size: 15px; cursor: pointer; }
+.settings-form .quiet { border-color: #cbd5c6; background: transparent; color: #596453; }
+.settings-form .hint { color: #596453; font-size: 14px; line-height: 1.8; }
+.settings-form .notice { color: #2f6654; font-size: 15px; font-weight: 600; margin-top: 16px; overflow-wrap: anywhere; }
+.settings-form button:disabled { opacity: .55; cursor: default; }
+.settings-form :is(input, select, button):focus-visible { outline: 2px solid #2f6654; outline-offset: 3px; }
