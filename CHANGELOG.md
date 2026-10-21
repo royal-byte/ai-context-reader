@@ -17,7 +17,7 @@
 
 - Narrow host permissions to HTTP(S), remove the unused `downloads` permission, add icons and page titles.
 - Open the options page in a tab instead of a small dialog.
-- Add a CI workflow template in `docs/ci.yml` (copy to `.github/workflows/ci.yml` after granting the GitHub token the `workflow` scope), privacy/security notes and an MIT license.
+- Add CI (typecheck, tests, build, zip artifact), privacy/security notes and an MIT license.
 - Add Prettier configuration and move build-only packages to `devDependencies`.
 
 ### Deferred

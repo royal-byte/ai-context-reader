@@ -13,16 +13,7 @@
 
 ## CI
 
-`docs/ci.yml` 是现成的 GitHub Actions 工作流模板（typecheck → test → build → zip）。当前推送 token 没有 `workflow` scope，所以没有自动放进 `.github/workflows/`。授权后执行：
-
-```powershell
-gh auth refresh -s workflow
-New-Item -ItemType Directory -Force .github/workflows
-Copy-Item docs/ci.yml .github/workflows/ci.yml
-git add .github/workflows/ci.yml
-git commit -m "ci: enable workflow"
-git push
-```
+`.github/workflows/ci.yml` 在每次 push 和 pull request 时执行 typecheck、测试、构建和 zip 打包；构建产物可从 Actions 页的 `extension-zip` artifact 下载。
 
 ## 使用
 
