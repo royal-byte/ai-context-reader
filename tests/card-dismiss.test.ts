@@ -25,6 +25,31 @@ it('dismisses outside presses, preserves shadow-card interactions, and cleans up
   expect(close).toHaveBeenCalledOnce();
 });
 
+it('treats a closed shadow host as inside even when the path is truncated', () => {
+  const doc = new EventTarget();
+  const removeAllRanges = vi.fn();
+  Object.assign(doc, { getSelection: () => ({ removeAllRanges }) });
+  const host = {};
+  const card = {
+    ownerDocument: doc,
+    getRootNode: () => ({ host })
+  } as unknown as HTMLElement;
+  const close = vi.fn();
+  const cleanup = dismissCardOnOutsidePress(card, close);
+
+  const inside = new Event('pointerdown');
+  Object.defineProperty(inside, 'composedPath', { value: () => [host, doc] });
+  doc.dispatchEvent(inside);
+  expect(close).not.toHaveBeenCalled();
+  expect(removeAllRanges).not.toHaveBeenCalled();
+
+  const outside = new Event('pointerdown');
+  Object.defineProperty(outside, 'composedPath', { value: () => [doc] });
+  doc.dispatchEvent(outside);
+  expect(close).toHaveBeenCalledOnce();
+  cleanup();
+});
+
 it('preserves selection for the explain button, right-click and copy, and dismisses on Escape', () => {
   const doc = new EventTarget();
   const removeAllRanges = vi.fn();
