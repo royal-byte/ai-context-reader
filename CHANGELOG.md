@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.7.5 - 2026-10-22
+
+### Multi-POS card and de-duplication
+
+- Parse the bundled ECDICT translation into POS-grouped senses instead of one flat string.
+- Show the contextual meaning first, then the standard dictionary meanings grouped by part of speech.
+- Put the contextual part of speech first; other parts of speech remain visible but secondary.
+- Show per-POS pronunciation for common heteronyms (record, present, produce, object, minute, etc.).
+- Merge only when the contextual and standard glosses are exactly the same after normalization; different meanings stay visibly separate.
+- Save the full standard dictionary definition, part of speech and phonetic with the favorite.
+- Loading/error states still show the local standard definition without waiting for the AI.
+
+### Engineering
+
+- 254 automated tests, typecheck and production build passing.
+
 ## 0.7.4 - 2026-10-22
 
 ### PDF fit-page stability

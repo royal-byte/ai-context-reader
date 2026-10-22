@@ -6,7 +6,31 @@ import type { Explanation, ReaderItem, ContextPacket } from './types';
 import { formatPartOfSpeech, type FavoriteState } from './library';
 import { keepServiceWorkerAlive } from './keepalive';
 import { speakEnglish } from './speech';
-import { stripDictionaryPos, type DictionaryEntry } from './dictionary';
+import { normalizeDictionaryGloss, stripDictionaryPos, type DictionaryEntry, type DictionarySense } from './dictionary';
+
+type SenseGroup = { pos: string; definitions: DictionarySense[] };
+const posKey = (value: string) => value.toLowerCase().replace(/\.$/, '');
+
+function groupSenses(senses: DictionarySense[], contextPos?: string): SenseGroup[] {
+  const groups = new Map<string, SenseGroup>();
+  for (const sense of senses) {
+    const key = sense.pos || '';
+    const group = groups.get(key);
+    if (group) group.definitions.push(sense);
+    else groups.set(key, { pos: key, definitions: [sense] });
+  }
+  return [...groups.values()].sort((a, b) => {
+    const aContext = contextPos && posKey(a.pos) === posKey(contextPos) ? 0 : 1;
+    const bContext = contextPos && posKey(b.pos) === posKey(contextPos) ? 0 : 1;
+    return aContext - bContext;
+  });
+}
+
+const formatSenses = (senses: DictionarySense[]) => senses.map((sense) => `${sense.pos ? `${sense.pos} ` : ''}${sense.definition}`).join('；');
+
+function SenseList({ groups }: { groups: SenseGroup[] }) {
+  return <div className="acr-sense-list">{groups.map((group) => <div className="acr-sense-row" key={group.pos || 'other'}>{group.pos && <span className="acr-sense-pos">{formatPartOfSpeech(group.pos)}</span>}<span className="acr-sense-definition">{group.definitions.map((sense) => sense.definition).join('；')}{group.definitions.find((sense) => sense.phonetic)?.phonetic && <span className="acr-sense-phonetic">{group.definitions.find((sense) => sense.phonetic)!.phonetic}</span>}</span></div>)}</div>;
+}
 
 export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number; packet?: ContextPacket };
 type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
@@ -30,10 +54,21 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
   const localDefinition = local ? stripDictionaryPos(local.translation) : '';
-  const standardDefinition = mode === 'word' ? localDefinition || result?.definition : result?.definition;
-  const partOfSpeech = mode === 'word' ? local?.partOfSpeech || result?.partOfSpeech : result?.partOfSpeech;
-  const phonetic = mode === 'word' ? local?.phonetic || result?.phonetic : result?.phonetic;
-  const headword = result?.lemma || local?.word || text;
+  const localSenses: DictionarySense[] = local?.senses?.length ? local.senses : local ? [{ pos: local.partOfSpeech || '', definition: localDefinition }] : [];
+  const contextKey = result?.translation ? normalizeDictionaryGloss(result.translation) : '';
+  const exactMatch = Boolean(contextKey && result && (
+    localSenses.some((sense) => normalizeDictionaryGloss(sense.definition) === contextKey)
+    || (!localSenses.length && result.definition && normalizeDictionaryGloss(result.definition) === contextKey)
+  ));
+  const contextSense = localSenses.find((sense) => result?.partOfSpeech && posKey(sense.pos) === posKey(result.partOfSpeech));
+  const standardGroups = localSenses.length ? groupSenses(localSenses, result?.partOfSpeech) : [];
+  const visibleGroups = exactMatch
+    ? standardGroups.map((group) => ({ ...group, definitions: group.definitions.filter((sense) => normalizeDictionaryGloss(sense.definition) !== contextKey) })).filter((group) => group.definitions.length)
+    : standardGroups;
+  const standardDefinition = mode === 'word' && localSenses.length ? formatSenses(localSenses) : localDefinition || result?.definition;
+  const partOfSpeech = mode === 'word' ? contextSense?.pos || local?.partOfSpeech || result?.partOfSpeech : result?.partOfSpeech;
+  const phonetic = mode === 'word' ? contextSense?.phonetic || local?.phonetic || result?.phonetic : result?.phonetic;
+  const headword = mode === 'word' && local?.word ? local.word : result?.lemma || local?.word || text;
   useEffect(() => presentation === 'popup' && card.current ? dismissCardOnOutsidePress(card.current, close) : undefined, [close, presentation]);
   useEffect(() => {
     let active = true;
@@ -95,9 +130,13 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
       {cached && !loading && <p className="acr-cache">{t('来自本机缓存 · 未重复请求模型', 'From local cache · no new model request')}</p>}
       {loading && <p className="acr-loading" role="status">{t('正在结合上下文理解…', 'Understanding in context…')}</p>}
       {error && <div className="acr-error" role="alert">{!loading && !result ? <><p>{t('AI 解释暂时不可用，请重试。', 'AI explanation is temporarily unavailable. Please retry.')}</p><details><summary>{t('查看原因', 'Show details')}</summary><p>{error}</p></details><button onClick={() => setRetry((n) => n + 1)}>{t('重试', 'Retry')}</button></> : <p>{error}</p>}</div>}
-      {(result || (mode === 'word' && local)) && <section className="acr-standard"><h3>{shortSelection ? t('标准释义', 'Definition') : mode === 'sentence' ? t('自然翻译', 'Translation') : t('内容摘要', 'Summary')}</h3><p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{mode === 'sentence' ? result?.translation : standardDefinition}</p></section>}
+      {!result && mode === 'word' && visibleGroups.length > 0 && <section className="acr-standard acr-common"><h3>{t('标准释义', 'Definition')} <span className="acr-source">{t('词典', 'Dictionary')}</span></h3><SenseList groups={visibleGroups} /></section>}
+      {result && !loading && shortSelection && result.translation && <section className="acr-translation acr-context-meaning"><h3>{exactMatch ? t('语境义 / 标准释义', 'In context / Definition') : t('语境义', 'In context')} <span className="acr-ai">AI</span></h3><p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{result.translation}</p></section>}
+      {result && !loading && mode === 'word' && (visibleGroups.length > 0 || (!localSenses.length && !exactMatch)) && <section className="acr-standard acr-common"><h3>{t('标准释义', 'Definition')} <span className="acr-source">{localSenses.length ? t('词典', 'Dictionary') : t('AI', 'AI')}</span></h3>{visibleGroups.length > 0 ? <SenseList groups={visibleGroups} /> : <p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{standardDefinition}</p>}</section>}
+      {result && !loading && mode === 'phrase' && !exactMatch && <section className="acr-standard"><h3>{t('标准释义', 'Definition')}</h3><p>{result.definition}</p></section>}
+      {result && !loading && mode === 'sentence' && <section className="acr-standard"><h3>{t('自然翻译', 'Translation')}</h3><p>{result.translation}</p></section>}
+      {result && !loading && mode === 'paragraph' && <section className="acr-standard"><h3>{t('内容摘要', 'Summary')}</h3><p>{result.definition}</p></section>}
       {!loading && result && <>
-        {shortSelection && result.translation && result.translation !== standardDefinition && <section className="acr-translation"><h3>{t('语境义', 'In context')}</h3><p>{result.translation}</p></section>}
         <section className="acr-context"><h3>{t('上下文释义', 'Meaning in context')} <span className="acr-ai">AI</span></h3><p>{result.explanation}</p></section>
         {shortSelection && result.sentenceTranslation && <section className="acr-translation"><h3>{t('整句翻译', 'Sentence translation')}</h3><p>{result.sentenceTranslation}</p></section>}
         {mode === 'phrase' && result.usage && <details className="acr-details"><summary>{t('用法与搭配', 'Usage and collocations')}</summary><p>{result.usage}</p></details>}

@@ -1,11 +1,84 @@
+export type DictionarySense = {
+  pos: string;
+  definition: string;
+  phonetic?: string;
+};
+
 export type DictionaryEntry = {
   word: string;
   phonetic: string;
   translation: string;
   partOfSpeech?: string;
+  senses?: DictionarySense[];
 };
 
 let entries: Promise<Map<string, DictionaryEntry>> | undefined;
+
+const POS_PREFIX = /^(n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj|a|ad)\.\s*/i;
+const POS_NORMALIZE: Record<string, string> = {
+  n: 'n.', v: 'v.', vt: 'vt.', vi: 'vi.', adj: 'adj.', adv: 'adv.',
+  pron: 'pron.', prep: 'prep.', conj: 'conj.', art: 'art.', num: 'num.',
+  aux: 'aux.', int: 'interj.', interj: 'interj.', a: 'adj.', ad: 'adv.'
+};
+
+const HETERONYMS: Record<string, Record<string, string>> = {
+  record: { n: '/ˈrekərd/', v: '/rɪˈkɔːrd/', vt: '/rɪˈkɔːrd/', vi: '/rɪˈkɔːrd/' },
+  present: { n: '/ˈprezənt/', adj: '/ˈprezənt/', v: '/prɪˈzent/', vt: '/prɪˈzent/', vi: '/prɪˈzent/' },
+  produce: { n: '/ˈproʊduːs/', v: '/prəˈduːs/', vt: '/prəˈduːs/', vi: '/prəˈduːs/' },
+  object: { n: '/ˈɑːbdʒekt/', v: '/əbˈdʒekt/', vi: '/əbˈdʒekt/', vt: '/əbˈdʒekt/' },
+  project: { n: '/ˈprɑːdʒekt/', v: '/prəˈdʒekt/', vt: '/prəˈdʒekt/' },
+  permit: { n: '/ˈpɜːrmɪt/', v: '/pərˈmɪt/', vt: '/pərˈmɪt/' },
+  refuse: { n: '/ˈrefjuːs/', v: '/rɪˈfjuːz/', vt: '/rɪˈfjuːz/' },
+  increase: { n: '/ˈɪŋkriːs/', v: '/ɪnˈkriːs/', vt: '/ɪnˈkriːs/' },
+  decrease: { n: '/ˈdiːkriːs/', v: '/dɪˈkriːs/', vt: '/dɪˈkriːs/' },
+  export: { n: '/ˈekspɔːrt/', v: '/ɪkˈspɔːrt/', vt: '/ɪkˈspɔːrt/' },
+  import: { n: '/ˈɪmpɔːrt/', v: '/ɪmˈpɔːrt/', vt: '/ɪmˈpɔːrt/' },
+  contract: { n: '/ˈkɑːntrækt/', v: '/kənˈtrækt/', vt: '/kənˈtrækt/' },
+  subject: { n: '/ˈsʌbdʒekt/', adj: '/ˈsʌbdʒekt/', v: '/səbˈdʒekt/', vt: '/səbˈdʒekt/' },
+  minute: { n: '/ˈmɪnɪt/', v: '/ˈmɪnɪt/', vt: '/ˈmɪnɪt/', adj: '/maɪˈnuːt/' },
+  perfect: { n: '/ˈpɜːrfɪkt/', adj: '/ˈpɜːrfɪkt/', v: '/pərˈfekt/', vt: '/pərˈfekt/' },
+  use: { n: '/juːs/', v: '/juːz/', vt: '/juːz/' },
+  abuse: { n: '/əˈbjuːs/', v: '/əˈbjuːz/', vt: '/əˈbjuːz/' },
+  house: { n: '/haʊs/', v: '/haʊz/', vt: '/haʊz/' },
+  live: { adj: '/laɪv/', adv: '/laɪv/', v: '/lɪv/', vi: '/lɪv/' },
+  separate: { adj: '/ˈsepərət/', v: '/ˈsepəreɪt/', vt: '/ˈsepəreɪt/' },
+  frequent: { adj: '/ˈfriːkwənt/', v: '/frɪˈkwent/', vt: '/frɪˈkwent/' }
+};
+
+const normalizePos = (value: string) => POS_NORMALIZE[value.toLowerCase().replace(/\.$/, '')] ?? value;
+
+const firstPos = (partOfSpeech?: string) => {
+  const token = partOfSpeech?.split(/[\/,，;；|]+/).map((part) => part.trim()).find(Boolean);
+  return token ? normalizePos(token) : '';
+};
+
+/** Parse ECDICT's one-line translation into a small, POS-grouped list. */
+export function parseDictionarySenses(translation: string, partOfSpeech?: string): DictionarySense[] {
+  const chunks = translation.replace(/\\n/g, '\n').split(/[;\n]/).map((part) => part.trim()).filter(Boolean);
+  const fallbackPos = firstPos(partOfSpeech);
+  let currentPos = fallbackPos;
+  const senses: DictionarySense[] = [];
+  for (const chunk of chunks) {
+    const match = chunk.match(POS_PREFIX);
+    let pos = currentPos;
+    let definition = chunk;
+    if (match) {
+      pos = normalizePos(match[1]!);
+      definition = chunk.slice(match[0].length).trim();
+      currentPos = pos;
+    } else if (/^\[[^\]]+\]/.test(chunk)) {
+      // Domain labels such as [计], [医], [网络] are usually noun glosses.
+      pos = /(^|\s)n\./i.test(partOfSpeech ?? '') ? 'n.' : currentPos;
+      definition = chunk.replace(/^\[[^\]]+\]\s*/, '').trim();
+    }
+    if (!definition) continue;
+    const existing = senses.find((sense) => sense.pos === pos);
+    if (existing) existing.definition = `${existing.definition}；${definition}`;
+    else senses.push({ pos, definition });
+    if (senses.length >= 6) break;
+  }
+  return senses.length ? senses : [{ pos: fallbackPos, definition: stripDictionaryPos(translation) }];
+}
 
 export function normalizeDictionaryWord(value: string) {
   return value.toLowerCase().replace(/[^a-z'-]/g, '').replace(/^'+|'+$/g, '');
@@ -13,7 +86,28 @@ export function normalizeDictionaryWord(value: string) {
 
 /** Remove the first dictionary POS prefix when the UI already renders one. */
 export function stripDictionaryPos(value: string) {
-  return value.replace(/^(?:n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj)\.\s*/i, '');
+  return value.replace(/^(?:n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj|a|ad)\.\s*/i, '');
+}
+
+/** Compare exact dictionary glosses for safe de-duplication; not a semantic merge. */
+export function normalizeDictionaryGloss(value: string) {
+  return stripDictionaryPos(value)
+    .replace(/\[[^\]]+\]/g, '')
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/[\s，,；;。.!?、]/g, '')
+    .toLowerCase();
+}
+
+export function dictionaryPhonetic(word: string, pos: string) {
+  const map = HETERONYMS[word];
+  return map?.[pos.toLowerCase().replace(/\.$/, '')];
+}
+
+function withPhonetics(word: string, senses: DictionarySense[]) {
+  return senses.map((sense) => {
+    const phonetic = dictionaryPhonetic(word, sense.pos);
+    return phonetic ? { ...sense, phonetic } : sense;
+  });
 }
 
 /** Conservative fallbacks for common inflections; never invent a definition. */
@@ -51,9 +145,13 @@ export function loadDictionary() {
       if (!response.ok) throw new Error('Dictionary unavailable.');
       return response.json() as Promise<string[][]>;
     })
-    .then((rows) => new Map(rows.map(([word, phonetic, translation, partOfSpeech]) => [word!, {
-      word: word!, phonetic: phonetic ?? '', translation: translation ?? '', partOfSpeech: partOfSpeech || undefined
-    }])))
+    .then((rows) => new Map(rows.map(([word, phonetic, translation, partOfSpeech]) => {
+      const normalizedPart = partOfSpeech || undefined;
+      const senses = withPhonetics(word!, parseDictionarySenses(translation ?? '', normalizedPart));
+      return [word!, {
+        word: word!, phonetic: phonetic ?? '', translation: translation ?? '', partOfSpeech: normalizedPart, senses
+      }];
+    })))
     .catch((error) => { entries = undefined; throw error; });
   return entries;
 }

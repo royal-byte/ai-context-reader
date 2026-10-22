@@ -36,6 +36,29 @@ it('shows the local dictionary as the standard definition before the AI responds
   expect(markup).not.toContain('本地词典');
 });
 
+it('renders context first and grouped multi-POS standard senses afterwards', () => {
+  state.values = [{ mode: 'word', definition: '纪录', translation: '纪录', explanation: '这里指最佳成绩', examples: [], partOfSpeech: 'n.', sentenceTranslation: '这支队伍创下了新纪录。' }, false, false, '', '', 0, 'new', false, false, {
+    word: 'record', phonetic: '/ˈrekərd/', translation: 'n. 纪录, 唱片; v. 记录, 录制', partOfSpeech: 'n. / v.',
+    senses: [{ pos: 'n.', definition: '纪录；唱片', phonetic: '/ˈrekərd/' }, { pos: 'v.', definition: '记录；录制', phonetic: '/rɪˈkɔːrd/' }]
+  }];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'record', context: 'They set a new record.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('语境义');
+  expect(markup).toContain('标准释义');
+  expect(markup).toContain('记录；录制');
+  expect(markup).toContain('/rɪˈkɔːrd/');
+  expect(markup.indexOf('语境义')).toBeLessThan(markup.indexOf('标准释义'));
+});
+
+it('merges an exactly identical contextual and standard gloss', () => {
+  state.values = [{ mode: 'word', definition: '任务；工作', translation: '任务；工作', explanation: '这里指 Agent 执行的工作', examples: [], partOfSpeech: 'n.' }, false, false, '', '', 0, 'new', false, false, {
+    word: 'task', phonetic: '/tæsk/', translation: 'n. 任务；工作', partOfSpeech: 'n.',
+    senses: [{ pos: 'n.', definition: '任务；工作' }]
+  }];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'task', context: 'A task for the agent.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('语境义 / 标准释义');
+  expect(markup.match(/任务；工作/g)).toHaveLength(1);
+});
+
 it.each([
   ['phrase', false, '保存到生词库'],
   ['sentence', false, '保存为摘录'],
