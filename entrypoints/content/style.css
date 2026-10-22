@@ -14,6 +14,9 @@
 .acr-header > div { min-width: 0; }
 .acr-header .acr-phonetic { margin-top: 5px; color: var(--acr-muted); font: 15px/1.5 'Segoe UI', 'Lucida Sans Unicode', sans-serif; overflow-wrap: anywhere; }
 .acr-phonetic-label { font: 11px/1.5 'Segoe UI', 'Microsoft YaHei', sans-serif; margin-right: 3px; }
+.acr-title-row { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.acr-title-row h2 { flex: 1; min-width: 0; }
+.acr-title-row .acr-speak { margin-top: 2px; flex-shrink: 0; }
 .acr-speak { margin-top: 7px; border: 0; border-radius: 6px; background: #edf3ee; color: #315a46; padding: 3px 8px; font-size: 13px !important; line-height: 1.4; }
 .acr-speak:hover { background: #dfeae2; }
 .acr-close { flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: #858b87; font-size: 21px !important; line-height: 1; }

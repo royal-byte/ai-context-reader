@@ -57,6 +57,7 @@ it('shows contextual translation, examples and a pronunciation action', () => {
   expect(markup).toContain('例句');
   expect(markup).toContain('An example sentence.');
   expect(markup).toContain('aria-label="朗读"');
+  expect(markup).toMatch(/acr-title-row[^>]*><h2[^>]*>.*?<\/h2><button[^>]*aria-label="朗读"/);
 });
 
 it('does not promise a nonexistent dictionary fallback when AI fails', () => {
