@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.7.1 - 2026-10-22
+
+### Context Packet v2
+
+- Build a bounded structured packet from web, PDF and EPUB selections: selection, enclosing sentence, previous/next sentence, paragraph excerpt, section heading and source kind.
+- Cap every packet field before it leaves the page; no page URL, page title or file name is sent to the model.
+- Feed the packet to the prompt as quoted reading material, with explicit rules to choose the contextual sense and not dump every dictionary meaning.
+- Keep the common dictionary meaning in `definition`; use `translation` for the contextual equivalent and `explanation` for one or two concise reasons that do not repeat them.
+- Choose `partOfSpeech` from the contextual use; if several parts of speech exist, do not list them all.
+- Include the packet in the local cache key so the same wording in a different context does not reuse the wrong explanation.
+
+### Engineering
+
+- 247 automated tests, typecheck and production build passing.
+
 ## 0.7.0 - 2026-10-22
 
 ### PDF reading

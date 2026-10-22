@@ -35,6 +35,8 @@ it('applies language and privacy in the final wire payload, not just in UI extra
   const body = JSON.parse(fetch.mock.calls[0]![1].body);
   expect(body.messages[0].content).toContain('Write all explanatory fields in English');
   expect(body.messages[1].content).toContain('This target matters.');
-  expect(body.messages[1].content).not.toContain('Private');
+  expect(body.messages[1].content).toContain('Previous sentence:\nPrivate unrelated sentence.');
+  expect(body.messages[1].content).toContain('Next sentence:\nPrivate after.');
+  expect(body.messages[1].content).not.toContain('https://');
   expect(body).not.toHaveProperty('sourceUrl');
 });

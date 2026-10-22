@@ -13,10 +13,11 @@ import { ReviewPage } from './ReviewPage';
 import { EpubPage } from './EpubPage';
 import { parseEpub, type ParsedEpub } from './epub';
 import { PdfOutline, type PdfOutlineItem } from './PdfOutline';
-import type { CollectionKind, LearningStatus, ReaderItem, ReadingDocument, QueryHistory } from './types';
+import type { CollectionKind, LearningStatus, ReaderItem, ReadingDocument, QueryHistory, ContextPacket } from './types';
 import { cleanSelection, MAX_SELECTION_LENGTH } from './reading';
 import { isEditableTarget, loadPreferences, matchesReaderShortcut, uiText, useReaderPreferences } from './preferences';
-import { contextForRange, windowContext } from './selection';
+import { contextForRange, contextPacketForRange, windowContext } from './selection';
+import { contextPacketForText } from './context';
 import { toAnkiTsv, toCsv } from './export';
 import { isLikelyEnglish } from './language';
 import { dueReviewQueue, type ReviewRating } from './srs';
@@ -234,9 +235,11 @@ export function Workbench() {
     if (!text) return false;
     if (preferences.englishOnly && !isLikelyEnglish(text)) return false;
     let context = '';
+    let packet: ContextPacket | undefined;
     if (text.length <= MAX_SELECTION_LENGTH) {
       if (document.kind === 'epub') {
-        context = contextForRange(range, text).context;
+        packet = contextPacketForRange(range, text, 'epub', epub?.chapters[page - 1]?.title);
+        context = packet.sentence || contextForRange(range, text).context;
       } else {
         const all = (paper as HTMLElement).dataset.pageText ?? text;
         const spans = [...paper.querySelectorAll('.textLayer span')];
@@ -245,11 +248,12 @@ export function Workbench() {
         const prefixLength = startSpanIndex < 0 ? 0 : spans.slice(0, startSpanIndex).map((span) => span.textContent ?? '').join(' ').length;
         let index = all.indexOf(text, Math.max(0, prefixLength - 1));
         if (index < 0) index = all.indexOf(text);
-        context = windowContext(all, text, index).context;
+        packet = contextPacketForText(text, all, index, 'pdf');
+        context = packet.sentence || windowContext(all, text, index).context;
       }
     }
     const rect = range.getBoundingClientRect();
-    const selection = { text, context, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
+    const selection = { text, context, packet, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
     if (opensImmediately(text, selection.immediate, confirmed, preferences)) explain(selection);
     else setPick(selection);
     return true;

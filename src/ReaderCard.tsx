@@ -2,19 +2,19 @@ import { useEffect, useRef, useState } from 'react';
 import { dismissCardOnOutsidePress } from './card-dismiss';
 import { inferReadingMode, minimalContext, sourceSentence } from './reading';
 import { DEFAULT_PREFERENCES, uiText, type ReaderPreferences } from './preferences';
-import type { Explanation, ReaderItem } from './types';
+import type { Explanation, ReaderItem, ContextPacket } from './types';
 import { formatPartOfSpeech, type FavoriteState } from './library';
 import { keepServiceWorkerAlive } from './keepalive';
 import { speakEnglish } from './speech';
 import type { DictionaryEntry } from './dictionary';
 
-export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number };
+export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number; packet?: ContextPacket };
 type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
 
 export function ReaderCard({ selection, close, anchor, onSaved, preferences = DEFAULT_PREFERENCES, presentation = 'popup' }: Props) {
   const t = uiText(preferences.uiLanguage);
   const card = useRef<HTMLElement>(null);
-  const { text, context, sourceUrl, sourceTitle, documentId, pageNumber } = selection;
+  const { text, context, sourceUrl, sourceTitle, documentId, pageNumber, packet } = selection;
   const requestedMode = inferReadingMode(text);
   const [result, setResult] = useState<Explanation>();
   const mode = result?.mode ?? requestedMode;
@@ -47,7 +47,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
     const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
     const stopKeepAlive = keepServiceWorkerAlive();
     setLoading(true); setResult(undefined); setError(''); setCached(false);
-    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'analyze', text, context: minimalContext(text, context), sourceUrl, sourceTitle, documentId, pageNumber, mode: requestedMode, requestId })).then((response) => {
+    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'analyze', text, context: minimalContext(text, context), packet, sourceUrl, sourceTitle, documentId, pageNumber, mode: requestedMode, requestId })).then((response) => {
       if (!active) return;
       if (response?.ok) { setResult(response.explanation); setCached(Boolean(response.cached)); if (response.warning) setError(response.warning); }
       else setError(response?.error ?? t('无法取得解释，请重试。', 'Could not get an explanation. Please retry.'));
@@ -58,7 +58,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
       stopKeepAlive();
       try { void chrome.runtime.sendMessage({ type: 'cancel', requestId }).catch(() => { /* The request already finished. */ }); } catch { /* The extension was reloaded. */ }
     };
-  }, [text, context, sourceUrl, sourceTitle, documentId, pageNumber, requestedMode, retry]);
+  }, [text, context, packet, sourceUrl, sourceTitle, documentId, pageNumber, requestedMode, retry]);
 
   useEffect(() => {
     if (!result) return;

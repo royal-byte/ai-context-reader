@@ -132,3 +132,9 @@ v0.5.0 增加默认开启的英文选区门：`isLikelyEnglish` 按 Latin/Han/Ka
 EPUB 在主扩展页面内用 JSZip 解压：读取 `META-INF/container.xml` 与 OPF，按 `spine` 顺序取 XHTML 章节，解析 nav/NCX 目录标题；章节 HTML 用 DOMParser 清洗，移除脚本/样式/表单/iframe/事件属性，只保留阅读标签，图片解析到 zip 内文件后转成生命周期受控的 blob URL。`EpubPage` 使用 `dangerouslySetInnerHTML` 渲染章节内容前已完成清洗；关闭或替换文档时统一 `revokeObjectURL`。选区仍走 Workbench 的 `capture`，EPUB 用 `contextForRange` 取最近 block 的上下文，PDF 保留文字层 span 偏移映射；两者共用 `local-pdf:` 来源前缀、收藏和回到原文逻辑。
 
 PDF 侧新增键盘翻页（不拦截可编辑控件和卡片打开状态）、`fit page` 缩放（用 viewport 高度计算）、夜间模式以及基于 `pdf.getOutline()`/`getDestination()` 的目录跳转。目录只负责跳页，不引入 PDF link annotation 层；搜索、链接注释和连续滚动仍留待后续。
+
+## v0.7.1 Context Packet v2
+
+`src/context.ts` 定义 `ContextPacket` 和有界构造器：网页/EPUB 由 `contextPacketForRange` 从最近 block、Range 偏移、邻近标题生成；PDF 由 `contextPacketForText` 从文字层整页文本和 span 偏移生成。字段上限为所在句 320、相邻句 180、段落 700、标题 120 字符；`normalizeContextPacket` 不信任消息中的 selection，重新使用已校验的选区，并重新裁剪所有字段。Packet 不含 URL、页面标题或文件名。
+
+后台 `analyze` 用 packet 生成缓存 key 和 prompt；`requestExplanation` 再校验一次，将 packet 作为“引用材料”传给模型，而不是让模型执行其中的指令。Prompt 保持 `definition` 为常见词典义、`translation` 为语境义，`explanation` 只解释语境判断且不重复前两者；`partOfSpeech` 取语境词性，多词性不全部罗列。落在 `src/context.test.ts`、`selection-packet.test.ts` 和 `query-privacy.test.ts`。

@@ -1,6 +1,18 @@
 export type ReadingMode = 'word' | 'phrase' | 'sentence' | 'paragraph';
 export type CollectionKind = 'vocabulary' | 'excerpt';
 export type LearningStatus = 'new' | 'reviewing' | 'mastered';
+export type ContextKind = 'web' | 'pdf' | 'epub';
+
+/** Bounded, structured reading context sent with a selection. */
+export type ContextPacket = {
+  selection: string;
+  sentence: string;
+  previousSentence?: string;
+  nextSentence?: string;
+  paragraph?: string;
+  heading?: string;
+  sourceKind: ContextKind;
+};
 
 export type Explanation = {
   mode?: ReadingMode;

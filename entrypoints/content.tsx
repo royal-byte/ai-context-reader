@@ -1,16 +1,17 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { SelectionReader, selectionIntent } from '../src/SelectionReader';
-import { contextForRange } from '../src/selection';
+import { contextForRange, contextPacketForRange } from '../src/selection';
 import { isLikelyEnglish } from '../src/language';
 import { cleanSelection, MAX_SELECTION_LENGTH } from '../src/reading';
+import type { ContextPacket } from '../src/types';
 import {
   DEFAULT_PREFERENCES, isEditableTarget, loadPreferences, matchesReaderShortcut, normalizePreferences,
   siteAllowed, useReaderPreferences, type ReaderPreferences
 } from '../src/preferences';
 import './content/style.css';
 
-type Selection = { text: string; context: string; rect: DOMRect; immediate: boolean; confirmed?: boolean };
+type Selection = { text: string; context: string; packet?: ContextPacket; rect: DOMRect; immediate: boolean; confirmed?: boolean };
 function selectionAt(immediate: boolean): Selection | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
@@ -21,7 +22,8 @@ function selectionAt(immediate: boolean): Selection | null {
   if (isEditableTarget(ancestor ?? null)) return null;
   if (text.length > MAX_SELECTION_LENGTH) return { text, context: '', rect: range.getBoundingClientRect(), immediate: false };
   const { context } = contextForRange(range, text);
-  return { text, context, rect: range.getBoundingClientRect(), immediate };
+  const packet = contextPacketForRange(range, text, 'web');
+  return { text, context, packet, rect: range.getBoundingClientRect(), immediate };
 }
 
 export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], cssInjectionMode: 'ui', async main(ctx) {
@@ -128,5 +130,5 @@ function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => vo
     window.addEventListener('hashchange', close);
     return () => { window.removeEventListener('popstate', close); window.removeEventListener('hashchange', close); };
   }, []);
-  return current ? <SelectionReader key={`${current.text}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, sourceUrl: location.href, sourceTitle: document.title }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} /> : null;
+  return current ? <SelectionReader key={`${current.text}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, packet: current.packet, sourceUrl: location.href, sourceTitle: document.title }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} /> : null;
 }

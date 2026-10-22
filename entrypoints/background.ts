@@ -3,12 +3,13 @@ import { requestExplanation } from '../src/api';
 import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '../src/validation';
 import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
 import type { Explanation } from '../src/types';
-import { inferReadingMode, isReadingMode, minimalContext, validateSelection } from '../src/reading';
+import { inferReadingMode, isReadingMode, validateSelection } from '../src/reading';
 import { isLikelyEnglish } from '../src/language';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
 import { explanationCacheKey, readCachedExplanation, writeCachedExplanation } from '../src/cache';
 import { lookupWord } from '../src/dictionary';
+import { contextPacketCacheValue, normalizeContextPacket } from '../src/context';
 
 const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
 
@@ -98,11 +99,12 @@ export default defineBackground(() => {
           if (isContentPage(sender) && !siteAllowed(sender.url ?? '', preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
           const config = await settings();
           const mode = isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);
-          const context = minimalContext(message.text, typeof message.context === 'string' ? message.context : '');
+          const packet = normalizeContextPacket(message.packet, message.text, typeof message.context === 'string' ? message.context : '');
+          const context = packet.sentence || packet.selection;
           const requestId = typeof message.requestId === 'string' ? message.requestId : '';
           const cacheable = Boolean(config.apiKey.trim());
           const cacheKey = cacheable
-            ? await explanationCacheKey({ endpoint: config.endpoint, model: config.model, mode, text: message.text, context, language: preferences.explanationLanguage })
+            ? await explanationCacheKey({ endpoint: config.endpoint, model: config.model, mode, text: message.text, context: contextPacketCacheValue(packet), language: preferences.explanationLanguage })
             : '';
           let cached: Explanation | undefined;
           try { cached = cacheKey ? await readCachedExplanation(cacheKey) : undefined; }
@@ -117,7 +119,7 @@ export default defineBackground(() => {
             if (requestId && controller) pending.set(requestId, controller);
             try {
               explanation = cacheable
-                ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal)
+                ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal, packet)
                 : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
               if (cacheKey) {
                 try { await writeCachedExplanation(cacheKey, explanation); }
