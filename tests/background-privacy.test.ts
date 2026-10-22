@@ -4,10 +4,12 @@ import { DEFAULT_PREFERENCES, PREFERENCES_KEY } from '../src/preferences';
 import { readerDb, recordQuery, getFavoriteState, saveItem } from '../src/db';
 import { requestExplanation } from '../src/api';
 import { readCachedExplanation, writeCachedExplanation } from '../src/cache';
+import { lookupWord } from '../src/dictionary';
 
 vi.mock('../src/api', () => ({ requestExplanation: vi.fn(async () => ({ definition: 'Meaning', translation: 'Translation', explanation: 'Context', examples: [] })) }));
 vi.mock('../src/db', () => ({ readerDb: {}, saveItem: vi.fn(async () => ({ id: 1, outcome: 'saved' })), getFavoriteState: vi.fn(async () => 'new'), recordQuery: vi.fn(async () => {}) }));
 vi.mock('../src/cache', () => ({ explanationCacheKey: vi.fn(async () => 'cache-key'), readCachedExplanation: vi.fn(async () => undefined), writeCachedExplanation: vi.fn(async () => {}) }));
+vi.mock('../src/dictionary', () => ({ lookupWord: vi.fn(async () => undefined) }));
 let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => void;
 let preferences = { ...DEFAULT_PREFERENCES };
 
@@ -72,6 +74,23 @@ it('can explain non-English selections when the language gate is disabled', asyn
   const result = await send({ ...message, text: '这是一段中文内容。', context: '这是一段中文内容。' });
   expect(result.ok).toBe(true);
   expect(requestExplanation).toHaveBeenCalledOnce();
+});
+
+it('uses the local Chinese gloss when a word definition comes back in English', async () => {
+  vi.mocked(lookupWord).mockResolvedValueOnce({ word: 'target', phonetic: '/ˈtɑːrɡɪt/', translation: 'n. 目标；靶子', partOfSpeech: 'n.' });
+  vi.mocked(requestExplanation).mockResolvedValueOnce({ definition: 'an object aimed at', translation: '目标', explanation: 'Context', examples: [] });
+  const result = await send();
+  expect(result.ok).toBe(true);
+  expect(result.explanation.definition).toBe('目标；靶子');
+  expect(result.explanation.partOfSpeech).toBe('n.');
+  expect(result.explanation.phonetic).toBe('/ˈtɑːrɡɪt/');
+});
+
+it('uses the Chinese translation when a phrase definition comes back in English', async () => {
+  vi.mocked(requestExplanation).mockResolvedValueOnce({ definition: 'a new period of activity', translation: '新的会话', explanation: 'Context', examples: [] });
+  const result = await send({ ...message, text: 'new session', context: 'A new session starts here.' });
+  expect(result.ok).toBe(true);
+  expect(result.explanation.definition).toBe('新的会话');
 });
 
 it('defaults to no query log and strips unrelated context and source metadata from model calls', async () => {

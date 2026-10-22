@@ -3,7 +3,7 @@ import type { Explanation, ReadingMode } from './types';
 
 export const CACHE_TTL = 7 * 24 * 60 * 60 * 1_000;
 export const CACHE_MAX = 500;
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v3';
 
 export async function explanationCacheKey(input: {
   endpoint: string;

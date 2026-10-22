@@ -13,6 +13,28 @@ import { contextPacketCacheValue, normalizeContextPacket } from '../src/context'
 
 const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
 
+const hasHan = (value: string) => /[\u3400-\u9fff]/.test(value);
+const stripDictionaryPos = (value: string) => value.replace(/^(?:n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj)\.\s*/i, '');
+
+/** Keep the common definition Chinese for words, using the bundled dictionary as a safety net. */
+async function ensureChineseDefinition(explanation: Explanation, mode: string, text: string, language: string) {
+  if (language !== 'zh-CN' || hasHan(explanation.definition)) return explanation;
+  if (mode === 'word') {
+    let entry: { translation?: string; partOfSpeech?: string; phonetic?: string } | undefined;
+    try { entry = await lookupWord(explanation.lemma || text); }
+    catch { return explanation; }
+    if (!entry?.translation) return explanation;
+    return {
+      ...explanation,
+      definition: stripDictionaryPos(entry.translation),
+      partOfSpeech: explanation.partOfSpeech || entry.partOfSpeech,
+      phonetic: explanation.phonetic || entry.phonetic
+    };
+  }
+  // For phrases/sentences/paragraphs, never show an English definition in Chinese mode.
+  return hasHan(explanation.translation) ? { ...explanation, definition: explanation.translation } : explanation;
+}
+
 const extensionBase = () => typeof chrome.runtime.getURL === 'function' ? chrome.runtime.getURL('') : '';
 const isExtensionPage = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && Boolean(extensionBase()) && Boolean(sender.url?.startsWith(extensionBase()));
 const isContentPage = (sender: chrome.runtime.MessageSender) => sender.id === chrome.runtime.id && typeof sender.tab?.id === 'number' && /^https?:/i.test(sender.url ?? '');
@@ -109,7 +131,7 @@ export default defineBackground(() => {
           let cached: Explanation | undefined;
           try { cached = cacheKey ? await readCachedExplanation(cacheKey) : undefined; }
           catch { /* Cache is best effort; a broken cache must not block the reader. */ }
-          let explanation;
+          let explanation: Explanation;
           let cachedHit = false;
           if (cached) {
             explanation = cached;
@@ -121,13 +143,14 @@ export default defineBackground(() => {
               explanation = cacheable
                 ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal, packet)
                 : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
-              if (cacheKey) {
-                try { await writeCachedExplanation(cacheKey, explanation); }
-                catch { /* Cache write failure must not discard a valid explanation. */ }
-              }
             } finally {
               if (requestId) pending.delete(requestId);
             }
+          }
+          explanation = await ensureChineseDefinition(explanation, mode, message.text, preferences.explanationLanguage);
+          if (!cachedHit && cacheKey) {
+            try { await writeCachedExplanation(cacheKey, explanation); }
+            catch { /* Cache write failure must not discard a valid explanation. */ }
           }
           let warning: string | undefined;
           if ((await loadPreferences()).saveQueryHistory) {

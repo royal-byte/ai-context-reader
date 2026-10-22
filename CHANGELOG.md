@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.2 - 2026-10-22
+
+### Chinese definitions
+
+- Require every explanatory field, including `definition`, to be Simplified Chinese; explicitly forbid pasting an English dictionary definition.
+- Make the phrase, sentence and paragraph instructions say that `definition` is the Chinese common meaning/summary.
+- Bump the explanation cache version so old English definitions do not keep reappearing from cache.
+- For a word whose model definition is still English, fill the common definition/part of speech/phonetic from the bundled Chinese dictionary.
+- For a phrase/sentence/paragraph, fall back to the contextual Chinese translation if the model still returns an English definition.
+
+### Engineering
+
+- 249 automated tests, typecheck and production build passing.
+
 ## 0.7.1 - 2026-10-22
 
 ### Context Packet v2

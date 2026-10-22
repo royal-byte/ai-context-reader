@@ -35,6 +35,9 @@ describe('provider support', () => {
     expect(body.provider).toEqual(provider === 'openrouter' ? { require_parameters: true } : undefined);
     expect(body.max_completion_tokens).toBe(minimax ? 1024 : undefined);
     expect(body.max_tokens).toBe(minimax ? undefined : 1024);
+    expect(body.messages[0].content).toContain('never an English dictionary definition');
+    expect(body.messages[0].content).toContain('Every explanatory field');
+    expect(body.messages[1].content).toContain('Enclosing sentence:');
     expect(body.messages[1].content).toContain('A resilient system recovers.');
     expect(body.thinking).toEqual(['openai', 'openrouter'].includes(provider) ? undefined : { type: 'disabled' });
     expect(init.headers).not.toHaveProperty('HTTP-Referer');

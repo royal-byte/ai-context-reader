@@ -138,3 +138,5 @@ PDF 侧新增键盘翻页（不拦截可编辑控件和卡片打开状态）、`
 `src/context.ts` 定义 `ContextPacket` 和有界构造器：网页/EPUB 由 `contextPacketForRange` 从最近 block、Range 偏移、邻近标题生成；PDF 由 `contextPacketForText` 从文字层整页文本和 span 偏移生成。字段上限为所在句 320、相邻句 180、段落 700、标题 120 字符；`normalizeContextPacket` 不信任消息中的 selection，重新使用已校验的选区，并重新裁剪所有字段。Packet 不含 URL、页面标题或文件名。
 
 后台 `analyze` 用 packet 生成缓存 key 和 prompt；`requestExplanation` 再校验一次，将 packet 作为“引用材料”传给模型，而不是让模型执行其中的指令。Prompt 保持 `definition` 为常见词典义、`translation` 为语境义，`explanation` 只解释语境判断且不重复前两者；`partOfSpeech` 取语境词性，多词性不全部罗列。落在 `src/context.test.ts`、`selection-packet.test.ts` 和 `query-privacy.test.ts`。
+
+v0.7.2 进一步把 `definition` 的语言钉死为简体中文：Prompt 禁止英文词典释义，缓存版本升到 v3；后台 `ensureChineseDefinition` 在单词定义仍为英文时用本地 ECDICT 子集补齐中文标准义/词性/音标，在短语/句子/段落仍为英文时用中文语境翻译兜底，避免 UI 出现纯英文“标准释义”。
