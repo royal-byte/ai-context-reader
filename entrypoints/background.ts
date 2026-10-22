@@ -8,6 +8,7 @@ import { isLikelyEnglish } from '../src/language';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
 import { explanationCacheKey, readCachedExplanation, writeCachedExplanation } from '../src/cache';
+import { lookupWord } from '../src/dictionary';
 
 const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
 
@@ -74,6 +75,12 @@ export default defineBackground(() => {
             await chrome.storage.local.set({ [PREFERENCES_KEY]: next });
           }
           sendResponse({ ok: true });
+          return;
+        }
+        if (message.type === 'dictionary-lookup') {
+          if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
+          const word = typeof message.word === 'string' ? message.word.slice(0, 100) : '';
+          sendResponse({ ok: true, entry: word ? await lookupWord(word) : undefined });
           return;
         }
         if (message.type === 'test-api') {

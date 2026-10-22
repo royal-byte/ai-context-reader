@@ -47,6 +47,18 @@ export function parseBackup(text: string): ReaderItem[] {
       if (!Number.isSafeInteger(record.pageNumber) || (record.pageNumber as number) < 1) return invalid('pageNumber');
       item.pageNumber = record.pageNumber as number;
     }
+    const number = (key: string, min: number, max: number): number | undefined => {
+      if (record[key] === undefined) return undefined;
+      const value = record[key];
+      if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) return invalid(key);
+      return value;
+    };
+    item.dueAt = number('dueAt', 0, Number.MAX_SAFE_INTEGER);
+    item.intervalDays = number('intervalDays', 0, 3_650);
+    item.ease = number('ease', 1, 5);
+    item.reviewCount = number('reviewCount', 0, 1_000_000);
+    item.lapseCount = number('lapseCount', 0, 1_000_000);
+    item.lastReviewedAt = number('lastReviewedAt', 0, Number.MAX_SAFE_INTEGER);
     item.structure = list('structure'); item.keyPoints = list('keyPoints');
     return item;
   });

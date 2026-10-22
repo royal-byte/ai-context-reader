@@ -18,6 +18,14 @@ it('accepts legacy records without mode, status, lemma or mode-specific AI field
   expect(parseBackup(JSON.stringify([{ ...word, mode: 'sentence', selectedText: 'I agree.', structure: undefined }]))[0]!.mode).toBe('sentence');
 });
 
+it('round-trips spaced-repetition fields without duplicating them into excerpts', () => {
+  const scheduled = { ...word, dueAt: 123_000, intervalDays: 2.5, ease: 2.6, reviewCount: 3, lapseCount: 1, lastReviewedAt: 122_000 };
+  expect(parseBackup(JSON.stringify([scheduled]))[0]).toMatchObject({
+    dueAt: 123_000, intervalDays: 2.5, ease: 2.6, reviewCount: 3, lapseCount: 1, lastReviewedAt: 122_000
+  });
+  expect(() => parseBackup(JSON.stringify([{ ...scheduled, ease: 99 }]))).toThrow();
+});
+
 it('copies only collection fields, excluding imported credentials, configuration and identifiers', () => {
   const [item] = parseBackup(JSON.stringify([{ ...word, apiKey: 'test-only-key', endpoint: 'https://untrusted.example', settings: { apiKey: 'test-only-key' }, constructor: {}, __proto__: null }]));
   expect(item).not.toHaveProperty('apiKey'); expect(item).not.toHaveProperty('endpoint'); expect(item).not.toHaveProperty('settings');

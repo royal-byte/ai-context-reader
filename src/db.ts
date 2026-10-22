@@ -2,6 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { DocumentFile, ExplanationCache, ReaderItem, ReadingDocument, QueryHistory } from './types';
 import { collectionKind, contextKey, favoriteKey, formatPartOfSpeech, type FavoriteInput } from './library';
 import { planRestore } from './backup';
+import { scheduleReview, type ReviewRating } from './srs';
 
 export const readerDb = new Dexie('ai-context-reader') as Dexie & {
   items: EntityTable<ReaderItem, 'id'>;
@@ -44,8 +45,17 @@ function savedRecord(item: ReaderItem, existing?: ReaderItem, restore = false): 
   const { id: _id, ...record } = item;
   const termKey = favoriteKey(item);
   const contextKeyValue = contextKey(item);
+  const review = kind === 'vocabulary' ? {
+    dueAt: record.dueAt ?? existing?.dueAt,
+    intervalDays: record.intervalDays ?? existing?.intervalDays,
+    ease: record.ease ?? existing?.ease,
+    reviewCount: record.reviewCount ?? existing?.reviewCount,
+    lapseCount: record.lapseCount ?? existing?.lapseCount,
+    lastReviewedAt: record.lastReviewedAt ?? existing?.lastReviewedAt
+  } : {};
   return {
     ...record,
+    ...review,
     uniqueKey: JSON.stringify([termKey, contextKeyValue]),
     termKey,
     contextKey: contextKeyValue,
@@ -80,6 +90,18 @@ export async function saveItem(item: ReaderItem) {
 
 export async function deleteFavoriteContext(id: number) {
   await readerDb.items.delete(id);
+}
+
+export async function reviewTerm(termKey: string, rating: ReviewRating, now = Date.now()) {
+  return readerDb.transaction('rw', readerDb.items, async () => {
+    const records = await readerDb.items.where('termKey').equals(termKey).toArray();
+    if (!records.length) throw new Error('词条不存在。 / Term not found.');
+    const schedule = scheduleReview(records[0]!, rating, now);
+    for (const record of records) {
+      if (record.id !== undefined) await readerDb.items.update(record.id, schedule);
+    }
+    return schedule;
+  });
 }
 
 export async function deleteFavoriteTerm(termKey: string) {

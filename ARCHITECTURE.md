@@ -118,3 +118,9 @@ Dexie v3 仅新增 `queries: ++id,createdAt`，保留旧表和已有数据。查
 Dexie v4 为 `items` 增加 `termKey`、`contextKey` 与复合索引，升级时回填旧行；收藏查重、状态更新不再全表扫描。翻页进度改为 300ms debounce 并就地更新历史；关联词、筛选和计数使用 `useMemo`；设置页改为按需加载。content script 首次选区才挂载 Shadow DOM/React 树，上下文限制在最近 block 与 20k 字符窗口；PDF 文字层渲染后按 span 顺序写回 `pageText`，使选区偏移与文本层一致。
 
 v0.5.0 增加默认开启的英文选区门：`isLikelyEnglish` 按 Latin/Han/Kana/Hangul 字符比例在本地判断，content script、PDF 捕获与后台 `analyze` 三层都拒绝非英文选区，避免无意义的模型请求；`englishOnly` 可在设置中关闭。Dexie v5 仅新增 `explanations` 缓存表（7 天、最多 500 条，API 设置变化时清空）。阅读卡片展示语境义/例句，收藏详情复用 `SavedContext` 展示完整字段；删除、CSV/Anki 导出、排序/搜索、站点停用和 TTS 都只使用本地数据或浏览器能力。
+
+## v0.6.0 复习与离线词典
+
+`ReviewPage` 消费 `dueReviewQueue(items)`：词汇按 `favoriteKey` 归组，已有复习记录且 `dueAt <= now` 的进入到期队列，没有 `reviewCount` 的旧收藏作为新词，每次最多 20 张。`scheduleReview` 是本地 SM-2 风格调度器，四档评分写入 `dueAt`、`intervalDays`、`ease`、`reviewCount`、`lapseCount`、`lastReviewedAt`，并据间隔自动切换 `reviewing`/`mastered`；`reviewTerm` 在事务里更新同一词条的所有语境，避免各语境状态不一致。复习字段沿用 `ReaderItem` 而不是新表，因此现有 JSON 备份/导出和 `parseBackup` 白名单能直接携带，备份恢复不需要额外迁移。
+
+`dictionary.ts` 通过后台 `dictionary-lookup` 消息读取 `public/dictionary/ecdict.json`，只在单词模式触发；后台懒加载并缓存 `Map`，content script/PDF 不直接访问文件。卡片在 AI 请求期间或失败时展示本地释义，AI 结果缺少音标/词性时用本地值补齐；`dictionaryCandidates` 只做保守词形回退，不做词义推断。词典为 ECDICT（MIT）按频率截取的 20,000 词子集，构建脚本和许可证随数据一起分发。

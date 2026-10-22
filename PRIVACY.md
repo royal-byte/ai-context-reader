@@ -4,7 +4,8 @@ AI Context Reader is local-first. It has no account, backend, telemetry or analy
 
 ## What stays on your device
 
-- Favorites, explanations, source URLs, query history (optional), local PDF files and reading progress are stored in the extension's local IndexedDB/storage.
+- Favorites, explanations, source URLs, query history (optional), review schedules, local PDF files and reading progress are stored in the extension's local IndexedDB/storage.
+- The bundled ECDICT subset is local data; dictionary lookups stay on the device.
 - API keys are stored in the extension's local storage and are never included in exports or backups.
 - Backup files contain favorites and their source sentences/URLs. Treat them as personal data.
 

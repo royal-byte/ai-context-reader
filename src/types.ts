@@ -35,6 +35,13 @@ export type ReaderItem = Explanation & {
   /** Indexed identity fields. Legacy rows get these during the Dexie v4 upgrade. */
   termKey?: string;
   contextKey?: string;
+  /** Spaced-repetition schedule, shared by all contexts of a term. */
+  dueAt?: number;
+  intervalDays?: number;
+  ease?: number;
+  reviewCount?: number;
+  lapseCount?: number;
+  lastReviewedAt?: number;
 };
 
 export type ReadingDocument = {

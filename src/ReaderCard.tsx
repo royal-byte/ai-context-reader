@@ -6,6 +6,7 @@ import type { Explanation, ReaderItem } from './types';
 import { formatPartOfSpeech, type FavoriteState } from './library';
 import { keepServiceWorkerAlive } from './keepalive';
 import { speakEnglish } from './speech';
+import type { DictionaryEntry } from './dictionary';
 
 export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number };
 type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
@@ -25,9 +26,22 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const [existing, setExisting] = useState<FavoriteState>('new');
   const [checking, setChecking] = useState(false);
   const [cached, setCached] = useState(false);
+  const [local, setLocal] = useState<DictionaryEntry>();
   const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
+  const partOfSpeech = result?.partOfSpeech || local?.partOfSpeech;
+  const phonetic = result?.phonetic || local?.phonetic;
+  const headword = result?.lemma || local?.word || text;
   useEffect(() => presentation === 'popup' && card.current ? dismissCardOnOutsidePress(card.current, close) : undefined, [close, presentation]);
+  useEffect(() => {
+    let active = true;
+    if (requestedMode !== 'word') { setLocal(undefined); return; }
+    setLocal(undefined);
+    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'dictionary-lookup', word: text })).then((response) => {
+      if (active && response?.ok && response.entry) setLocal(response.entry);
+    }).catch(() => { /* Offline dictionary is optional. */ });
+    return () => { active = false; };
+  }, [requestedMode, text]);
   useEffect(() => {
     let active = true;
     const requestId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
@@ -73,14 +87,15 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const position = { width: size.width, maxHeight: `min(${size.height}px, calc(100dvh - 24px))`, ...(anchor ? { left: Math.max(12, Math.min(anchor.left, innerWidth - size.width - 24)), top: Math.max(12, Math.min(anchor.bottom + 12, innerHeight - size.height - 12)) } : { right: 16, bottom: 16 }) };
 
   return <aside ref={card} className={`acr-card${presentation === 'panel' ? ' acr-panel' : ''}`} lang={preferences.uiLanguage} style={presentation === 'popup' ? position : undefined} role={presentation === 'popup' ? 'dialog' : 'region'} aria-label={t('上下文阅读助手', 'Context reader')} onKeyDown={(event) => { if (event.key === 'Escape') close(); }}>
-    <header className="acr-header"><div><h2>{shortSelection ? (result?.lemma || text) : t('阅读助手', 'Reading assistant')}</h2>{mode === 'word' && result?.phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{result.phonetic}</span></p>}{result && <button type="button" className="acr-speak" onClick={() => speakEnglish(result.lemma || text)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}>×</button></header>
+    <header className="acr-header"><div><h2>{shortSelection ? headword : t('阅读助手', 'Reading assistant')}</h2>{mode === 'word' && phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{phonetic}</span></p>}{(result || local) && <button type="button" className="acr-speak" onClick={() => speakEnglish(headword)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}>×</button></header>
     <div className="acr-body" aria-busy={loading}>
       {result?.register === 'demo' && <p className="acr-demo">{t('演示内容 · 配置 API 后获取真实解释', 'Demo · Connect an API for real explanations')}</p>}
       {cached && !loading && <p className="acr-cache">{t('来自本机缓存 · 未重复请求模型', 'From local cache · no new model request')}</p>}
       {loading && <p className="acr-loading" role="status">{t('正在结合上下文理解…', 'Understanding in context…')}</p>}
       {error && <div className="acr-error" role="alert">{!loading && !result ? <><p>{t('AI 解释暂时不可用，请重试。', 'AI explanation is temporarily unavailable. Please retry.')}</p><details><summary>{t('查看原因', 'Show details')}</summary><p>{error}</p></details><button onClick={() => setRetry((n) => n + 1)}>{t('重试', 'Retry')}</button></> : <p>{error}</p>}</div>}
+      {!result && local && <section className="acr-standard acr-local"><h3>{t('本地词典', 'Local dictionary')}</h3><p>{local.partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(local.partOfSpeech)} · </span>}{local.translation}</p></section>}
       {!loading && result && <>
-        <section className="acr-standard"><h3>{shortSelection ? t('标准释义', 'Definition') : mode === 'sentence' ? t('自然翻译', 'Translation') : t('内容摘要', 'Summary')}</h3><p>{mode === 'word' && result.partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(result.partOfSpeech)} · </span>}{mode === 'sentence' ? result.translation : result.definition}</p></section>
+        <section className="acr-standard"><h3>{shortSelection ? t('标准释义', 'Definition') : mode === 'sentence' ? t('自然翻译', 'Translation') : t('内容摘要', 'Summary')}</h3><p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{mode === 'sentence' ? result.translation : result.definition}</p></section>
         {shortSelection && result.translation && result.translation !== result.definition && <section className="acr-translation"><h3>{t('语境义', 'In context')}</h3><p>{result.translation}</p></section>}
         <section className="acr-context"><h3>{t('上下文释义', 'Meaning in context')} <span className="acr-ai">AI</span></h3><p>{result.explanation}</p></section>
         {shortSelection && result.sentenceTranslation && <section className="acr-translation"><h3>{t('整句翻译', 'Sentence translation')}</h3><p>{result.sentenceTranslation}</p></section>}

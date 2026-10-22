@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm } from '../src/db';
 import type { ReaderItem } from '../src/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -101,4 +101,12 @@ it('deletes one context, a whole term, query history and a stored PDF', async ()
   await deleteReadingDocument('pdf-id');
   expect(files).toHaveBeenCalledWith('pdf-id');
   expect(documents).toHaveBeenCalledWith('pdf-id');
+});
+
+it('schedules a review across every context of a term', async () => {
+  mockItems([existing]);
+  const update = vi.spyOn(readerDb.items, 'update').mockResolvedValue(1);
+  const schedule = await reviewTerm('term-key', 'good', 1_000);
+  expect(schedule).toMatchObject({ reviewCount: 1, intervalDays: 1, status: 'reviewing' });
+  expect(update).toHaveBeenCalledWith(7, expect.objectContaining({ reviewCount: 1, dueAt: 1_000 + 86_400_000 }));
 });

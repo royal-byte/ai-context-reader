@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.6.0 - 2026-10-22
+
+### Spaced repetition
+
+- Add a Review view with due and new counts, a one-card-at-a-time queue and a cloze of the saved source sentence.
+- Add an SM-2-style scheduler with Again/Hard/Good/Easy ratings, interval/ease/count fields, and automatic `reviewing`/`mastered` status.
+- Limit new cards to 20 per queue; future cards are excluded until due.
+- Persist review fields with favorites and include them in JSON backups and exports.
+
+### Offline dictionary
+
+- Bundle a 20,000-word frequency-filtered ECDICT subset (MIT) with IPA, Chinese translation and normalized part of speech.
+- Look up words locally through the background service worker; no network, API key or token is needed.
+- Show local definition/phonetic while the AI request is loading, and keep it as a fallback when the AI is unavailable.
+- Add conservative inflection fallbacks (`-s`, `-ies`, `-ed`, `-ing`, double consonants) without inventing definitions.
+
+### Engineering
+
+- 240 automated tests, typecheck and production build passing.
+- Dictionary build script in `scripts/build_dictionary.py`; ECDICT attribution and license in `public/dictionary/`.
+
+### Deferred
+
+- PDF search, outline, link annotations, continuous scrolling and dark mode.
+- Full Workbench component split, typed i18n dictionary, ESLint and Playwright end-to-end tests.
+
 ## 0.5.0 - 2026-10-21
 
 ### Reader and library
@@ -36,10 +62,3 @@
 - Add CI (typecheck, tests, build, zip artifact), privacy/security notes and an MIT license.
 - Add Prettier configuration and move build-only packages to `devDependencies`.
 - 232 automated tests, typecheck and production build passing; extension zip attached to the release.
-
-### Deferred
-
-- Spaced-repetition review queue.
-- Bundled local dictionary.
-- PDF search, outline, link annotations, continuous scrolling and dark mode.
-- Full Workbench component split, typed i18n dictionary, ESLint and Playwright end-to-end tests.
