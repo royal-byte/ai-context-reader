@@ -43,6 +43,18 @@ function stringList(item: Record<string, unknown>, key: string, maxItems: number
   return value as string[];
 }
 
+/** Examples are optional metadata; a long paragraph should not fail just because the model omitted them. */
+function explanationExamples(item: Record<string, unknown>): string[] {
+  const value = item.examples;
+  if (value === undefined || value === null) return [];
+  if (typeof value === 'string') return value.trim() ? [value.trim().slice(0, MAX_ARRAY_ITEM)] : [];
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((entry): entry is string => typeof entry === 'string' && Boolean(entry.trim()))
+    .map((entry) => entry.slice(0, MAX_ARRAY_ITEM))
+    .slice(0, 5);
+}
+
 export function parseExplanation(input: string, mode?: ReadingMode): Explanation {
   const value = parseJsonObject(input);
   if (!value || typeof value !== 'object') throw new Error('API 返回的不是对象。');
@@ -50,8 +62,7 @@ export function parseExplanation(input: string, mode?: ReadingMode): Explanation
   const definition = explanationText(item, 'definition');
   const translation = explanationText(item, 'translation');
   const explanation = explanationText(item, 'explanation');
-  if (!Array.isArray(item.examples) || !item.examples.every((entry) => typeof entry === 'string' && entry.length <= MAX_ARRAY_ITEM)) throw new Error('API 返回 examples 格式不正确。');
-  const examples = (item.examples as string[]).slice(0, 5);
+  const examples = explanationExamples(item);
   const result: Explanation = { definition, translation, explanation, examples, register: optionalText(item, 'register', 100) };
   const actualMode = isReadingMode(item.mode) ? item.mode : mode;
   if (isReadingMode(item.mode)) result.mode = item.mode;

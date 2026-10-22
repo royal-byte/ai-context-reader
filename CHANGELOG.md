@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.7.6 - 2026-10-22
+
+### Paragraph output robustness
+
+- Treat `examples` as optional model metadata instead of rejecting the whole explanation when a paragraph response omits it or returns a string.
+- Cap/clean example strings instead of failing on an oversized example.
+- Require the prompt to always emit `examples` as an array of strings, using `[]` when none are useful.
+- Long paragraph selections no longer fail with “API 返回 examples 格式不正确”.
+
+### Engineering
+
+- 254 automated tests, typecheck and production build passing.
+
 ## 0.7.5 - 2026-10-22
 
 ### Multi-POS card and de-duplication

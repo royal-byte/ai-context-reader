@@ -23,9 +23,11 @@ describe('parseExplanation', () => {
     expect(parseExplanation(`Here is the JSON:\n\`\`\`json\n${body}\n\`\`\``).definition).toBe('x');
     expect(() => parseExplanation('not json')).toThrow('有效 JSON');
   });
-  it('rejects oversized explanatory fields and examples', () => {
+  it('rejects oversized explanatory fields and tolerates optional examples', () => {
     expect(() => parseExplanation(JSON.stringify({ ...base, definition: 'x'.repeat(8_001) }))).toThrow('过长');
-    expect(() => parseExplanation(JSON.stringify({ ...base, examples: ['x'.repeat(2_001)] }))).toThrow('examples');
+    expect(parseExplanation(JSON.stringify({ ...base, examples: undefined })).examples).toEqual([]);
+    expect(parseExplanation(JSON.stringify({ ...base, examples: 'One example.' })).examples).toEqual(['One example.']);
+    expect(parseExplanation(JSON.stringify({ ...base, examples: ['x'.repeat(2_001)] })).examples[0]).toHaveLength(2_000);
   });
 });
 
