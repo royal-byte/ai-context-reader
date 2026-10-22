@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.7.0 - 2026-10-22
+
+### PDF reading
+
+- Add keyboard page navigation (←/→, PageUp/PageDown, Home/End) while reading.
+- Add “Fit page” alongside fit-width and manual zoom.
+- Add a night-mode toggle for the reading surface.
+- Render the PDF outline in a compact toolbar menu and jump to its destinations.
+- Keep the reading surface responsive and persist the chosen page/zoom.
+
+### EPUB reading
+
+- Open local `.epub` files alongside PDFs; files stay in local IndexedDB and are never uploaded.
+- Parse the EPUB container/OPF/spine, render chapters into the main DOM, and expose a chapter selector.
+- Add previous/next chapter navigation, font-size controls and the same night mode.
+- Sanitize chapter HTML: remove scripts, styles, forms, iframes and event handlers; rewrite packaged images to local blob URLs.
+- Keep chapter progress in reading history and support selecting text for context explanations and favorites.
+
+### Engineering
+
+- Add JSZip for EPUB parsing and a jsdom-based parser regression test.
+- 243 automated tests, typecheck and production build passing.
+
+### Deferred
+
+- PDF text search, link annotations and continuous scrolling.
+- Full Workbench component split, typed i18n dictionary, ESLint and Playwright end-to-end tests.
+
 ## 0.6.0 - 2026-10-22
 
 ### Spaced repetition

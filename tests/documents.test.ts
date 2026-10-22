@@ -27,3 +27,8 @@ it('does not read or write stored files or progress when persistence is off', as
   expect(get).not.toHaveBeenCalled();
   expect(transaction).not.toHaveBeenCalled();
 });
+
+it('marks EPUB documents and defaults to a readable font zoom', async () => {
+  const result = await rememberDocument(new ArrayBuffer(0), 'book.epub', 3, false, 'epub');
+  expect(result).toMatchObject({ name: 'book.epub', pageCount: 3, kind: 'epub', zoom: '100', currentPage: 1 });
+});

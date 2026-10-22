@@ -47,6 +47,8 @@ export type ReaderItem = Explanation & {
 export type ReadingDocument = {
   id: string; name: string; pageCount: number; currentPage: number;
   zoom: string; createdAt: number; lastOpenedAt: number;
+  /** Optional for backward compatibility: older rows are PDFs. */
+  kind?: 'pdf' | 'epub';
 };
 export type DocumentFile = { id: string; data: ArrayBuffer };
 export type QueryHistory = { id?: number; text: string; sourceUrl: string; sourceTitle: string; pageNumber?: number; createdAt: number };

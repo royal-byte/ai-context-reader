@@ -124,3 +124,11 @@ v0.5.0 增加默认开启的英文选区门：`isLikelyEnglish` 按 Latin/Han/Ka
 `ReviewPage` 消费 `dueReviewQueue(items)`：词汇按 `favoriteKey` 归组，已有复习记录且 `dueAt <= now` 的进入到期队列，没有 `reviewCount` 的旧收藏作为新词，每次最多 20 张。`scheduleReview` 是本地 SM-2 风格调度器，四档评分写入 `dueAt`、`intervalDays`、`ease`、`reviewCount`、`lapseCount`、`lastReviewedAt`，并据间隔自动切换 `reviewing`/`mastered`；`reviewTerm` 在事务里更新同一词条的所有语境，避免各语境状态不一致。复习字段沿用 `ReaderItem` 而不是新表，因此现有 JSON 备份/导出和 `parseBackup` 白名单能直接携带，备份恢复不需要额外迁移。
 
 `dictionary.ts` 通过后台 `dictionary-lookup` 消息读取 `public/dictionary/ecdict.json`，只在单词模式触发；后台懒加载并缓存 `Map`，content script/PDF 不直接访问文件。卡片在 AI 请求期间或失败时展示本地释义，AI 结果缺少音标/词性时用本地值补齐；`dictionaryCandidates` 只做保守词形回退，不做词义推断。词典为 ECDICT（MIT）按频率截取的 20,000 词子集，构建脚本和许可证随数据一起分发。
+
+## v0.7.0 PDF 体验与 EPUB
+
+`ReadingDocument.kind` 是可选的 `'pdf' | 'epub'`；旧历史记录没有该字段，按 PDF 处理，因此不需要 Dexie 迁移。PDF/EPUB 文件仍共用 `files` 表，`rememberDocument` 在保存时写入 kind；PDF 的 `pageCount` 是页数，EPUB 的 `pageCount` 是章节数，`currentPage`/`zoom` 分别复用为章节索引和字号百分比。
+
+EPUB 在主扩展页面内用 JSZip 解压：读取 `META-INF/container.xml` 与 OPF，按 `spine` 顺序取 XHTML 章节，解析 nav/NCX 目录标题；章节 HTML 用 DOMParser 清洗，移除脚本/样式/表单/iframe/事件属性，只保留阅读标签，图片解析到 zip 内文件后转成生命周期受控的 blob URL。`EpubPage` 使用 `dangerouslySetInnerHTML` 渲染章节内容前已完成清洗；关闭或替换文档时统一 `revokeObjectURL`。选区仍走 Workbench 的 `capture`，EPUB 用 `contextForRange` 取最近 block 的上下文，PDF 保留文字层 span 偏移映射；两者共用 `local-pdf:` 来源前缀、收藏和回到原文逻辑。
+
+PDF 侧新增键盘翻页（不拦截可编辑控件和卡片打开状态）、`fit page` 缩放（用 viewport 高度计算）、夜间模式以及基于 `pdf.getOutline()`/`getDestination()` 的目录跳转。目录只负责跳页，不引入 PDF link annotation 层；搜索、链接注释和连续滚动仍留待后续。

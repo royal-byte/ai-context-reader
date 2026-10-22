@@ -10,10 +10,13 @@ import { ReaderCard, type ReadingSelection } from './ReaderCard';
 import { SavedContext } from './SavedContext';
 import { SelectionReader, selectionIntent, opensImmediately } from './SelectionReader';
 import { ReviewPage } from './ReviewPage';
+import { EpubPage } from './EpubPage';
+import { parseEpub, type ParsedEpub } from './epub';
+import { PdfOutline, type PdfOutlineItem } from './PdfOutline';
 import type { CollectionKind, LearningStatus, ReaderItem, ReadingDocument, QueryHistory } from './types';
 import { cleanSelection, MAX_SELECTION_LENGTH } from './reading';
 import { isEditableTarget, loadPreferences, matchesReaderShortcut, uiText, useReaderPreferences } from './preferences';
-import { windowContext } from './selection';
+import { contextForRange, windowContext } from './selection';
 import { toAnkiTsv, toCsv } from './export';
 import { isLikelyEnglish } from './language';
 import { dueReviewQueue, type ReviewRating } from './srs';
@@ -35,9 +38,13 @@ export function Workbench() {
   const [history, setHistory] = useState<ReadingDocument[]>([]);
   const [document, setDocument] = useState<ReadingDocument>();
   const [pdf, setPdf] = useState<PDFDocumentProxy>();
+  const [epub, setEpub] = useState<ParsedEpub>();
+  const [outline, setOutline] = useState<PdfOutlineItem[]>([]);
   const [page, setPage] = useState(1);
   const [zoom, setZoom] = useState('fit');
   const [width, setWidth] = useState(900);
+  const [height, setHeight] = useState(700);
+  const [night, setNight] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   const [pick, setPick] = useState<Pick>();
@@ -61,22 +68,46 @@ export function Workbench() {
   const restorePreview = useRef<HTMLElement>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const openSerial = useRef(0);
+  const epubUrls = useRef<string[]>([]);
+  const pageCount = pdf?.numPages ?? epub?.chapters.length ?? 1;
+  const chapter = epub?.chapters[clampPage(page, epub.chapters.length) - 1];
+  const epubFont = Math.max(70, Math.min(180, Number(zoom) || 100));
   const refreshLibrary = async () => setItems(await readerDb.items.orderBy('createdAt').reverse().toArray());
   const refreshHistory = async () => { setHistory(await readerDb.documents.orderBy('lastOpenedAt').reverse().toArray()); setQueries(await readerDb.queries.orderBy('createdAt').reverse().limit(200).toArray()); };
 
-  const showDocument = async (metadata: ReadingDocument, data: ArrayBuffer, serial: number) => {
+  const clearEpub = () => {
+    for (const url of epubUrls.current) URL.revokeObjectURL(url);
+    epubUrls.current = [];
+  };
+  const showPdfDocument = async (metadata: ReadingDocument, data: ArrayBuffer, serial: number) => {
     const loaded = await getDocument(pdfOptions(data)).promise;
     if (serial !== openSerial.current) { await loaded.loadingTask.destroy(); return; }
-    setPick(undefined); setExplaining(undefined); setPdf(loaded); setDocument(metadata);
+    clearEpub();
+    setPick(undefined); setExplaining(undefined); setEpub(undefined); setPdf(loaded); setDocument(metadata);
     setPage(clampPage(metadata.currentPage, loaded.numPages)); setZoom(metadata.zoom); setView('reading');
+    try { if (serial === openSerial.current) setOutline(((await loaded.getOutline()) as PdfOutlineItem[] | null) ?? []); }
+    catch { if (serial === openSerial.current) setOutline([]); }
+  };
+  const showEpubDocument = (metadata: ReadingDocument, parsed: ParsedEpub, serial: number) => {
+    if (serial !== openSerial.current) { for (const url of parsed.imageUrls) URL.revokeObjectURL(url); return; }
+    clearEpub();
+    setPick(undefined); setExplaining(undefined); setPdf(undefined); setOutline([]); setEpub(parsed); setDocument(metadata);
+    setPage(clampPage(metadata.currentPage, parsed.chapters.length));
+    setZoom(metadata.zoom === 'fit' ? '100' : metadata.zoom);
+    setView('reading');
+    epubUrls.current = parsed.imageUrls;
   };
   const reopen = async (metadata: ReadingDocument) => {
     const serial = ++openSerial.current;
     setBusy(true); setNotice('');
     try {
       const file = await readerDb.files.get(metadata.id);
-      if (!file) throw new Error(t("本机文件已不可用，请重新选择此 PDF。", "This local file is unavailable. Please select the PDF again."));
-      await showDocument(metadata, file.data, serial);
+      if (!file) throw new Error(t("本机文件已不可用，请重新选择此文档。", "This local file is unavailable. Please select the document again."));
+      if (metadata.kind === 'epub') {
+        showEpubDocument(metadata, await parseEpub(file.data), serial);
+      } else {
+        await showPdfDocument(metadata, file.data, serial);
+      }
       if (serial === openSerial.current && (await loadPreferences()).saveReadingProgress) {
         await readerDb.documents.update(metadata.id, { lastOpenedAt: Date.now() }); await refreshHistory();
       }
@@ -88,19 +119,33 @@ export function Workbench() {
     const serial = ++openSerial.current;
     setBusy(true); setNotice('');
     try {
-      if (file.size > 100 * 1024 * 1024) throw new Error(t("首版支持 100 MB 以内的 PDF，请选择较小的文件。", "Choose a PDF no larger than 100 MB."));
+      if (file.size > 100 * 1024 * 1024) throw new Error(t("首版支持 100 MB 以内的 PDF/EPUB，请选择较小的文件。", "Choose a PDF/EPUB no larger than 100 MB."));
       const data = await file.arrayBuffer();
+      const saveProgress = (await loadPreferences()).saveReadingProgress;
+      const isEpub = /\.epub$/i.test(file.name) || file.type === 'application/epub+zip';
+      if (isEpub) {
+        const parsed = await parseEpub(data);
+        if (serial !== openSerial.current) { for (const url of parsed.imageUrls) URL.revokeObjectURL(url); return; }
+        try {
+          const metadata = await rememberDocument(data, file.name, parsed.chapters.length, saveProgress, 'epub');
+          if (serial !== openSerial.current) { for (const url of parsed.imageUrls) URL.revokeObjectURL(url); return; }
+          showEpubDocument(metadata, parsed, serial);
+          await refreshHistory();
+        } catch (error) { for (const url of parsed.imageUrls) URL.revokeObjectURL(url); throw error; }
+        return;
+      }
       const loaded = await getDocument(pdfOptions(data)).promise;
       if (serial !== openSerial.current) { await loaded.loadingTask.destroy(); return; }
       try {
-        const metadata = await rememberDocument(data, file.name, loaded.numPages, (await loadPreferences()).saveReadingProgress);
+        const metadata = await rememberDocument(data, file.name, loaded.numPages, saveProgress, 'pdf');
         if (serial !== openSerial.current) { await loaded.loadingTask.destroy(); return; }
-        setPick(undefined); setExplaining(undefined); setPdf(loaded); setDocument(metadata);
+        setPick(undefined); setExplaining(undefined); clearEpub(); setEpub(undefined); setPdf(loaded); setDocument(metadata);
         setPage(clampPage(metadata.currentPage, loaded.numPages)); setZoom(metadata.zoom); setView('reading');
+        try { if (serial === openSerial.current) setOutline(((await loaded.getOutline()) as PdfOutlineItem[] | null) ?? []); } catch { if (serial === openSerial.current) setOutline([]); }
         await refreshHistory();
       } catch (error) { await loaded.loadingTask.destroy(); throw error; }
     } catch (error) {
-      if (serial === openSerial.current) setNotice(error instanceof Error && error.name === 'PasswordException' ? t("此 PDF 有密码保护，请先解除保护再打开。", "Remove this PDF’s password protection before opening it.") : error instanceof Error && error.name === 'QuotaExceededError' ? t("本机存储空间不足，文件未保存。已有文档和收藏不受影响。", "Local storage is full. The file was not saved; existing files and favorites are unaffected.") : error instanceof Error ? `无法打开 PDF：${error.message}` : t("无法打开此 PDF。", "Could not open this PDF."));
+      if (serial === openSerial.current) setNotice(error instanceof Error && error.name === 'PasswordException' ? t("此 PDF 有密码保护，请先解除保护再打开。", "Remove this PDF’s password protection before opening it.") : error instanceof Error && error.name === 'QuotaExceededError' ? t("本机存储空间不足，文件未保存。已有文档和收藏不受影响。", "Local storage is full. The file was not saved; existing files and favorites are unaffected.") : error instanceof Error ? `无法打开文档：${error.message}` : t("无法打开此文档。", "Could not open this document."));
     } finally { if (serial === openSerial.current) setBusy(false); }
   };
 
@@ -121,12 +166,17 @@ export function Workbench() {
     return () => { active = false; openSerial.current++; chrome.storage.onChanged.removeListener(changed); };
   }, []);
   useEffect(() => () => { void pdf?.loadingTask.destroy(); }, [pdf]);
+  useEffect(() => () => { for (const url of epubUrls.current) URL.revokeObjectURL(url); }, []);
   useEffect(() => {
     const element = viewport.current;
     if (!element) return;
-    const observer = new ResizeObserver(([entry]) => { if (entry && entry.contentRect.width > 0) setWidth(entry.contentRect.width); });
+    const observer = new ResizeObserver(([entry]) => {
+      if (!entry) return;
+      if (entry.contentRect.width > 0) setWidth(entry.contentRect.width);
+      if (entry.contentRect.height > 0) setHeight(entry.contentRect.height);
+    });
     observer.observe(element); return () => observer.disconnect();
-  }, [view, pdf]);
+  }, [view, pdf, epub]);
   useEffect(() => {
     setPick(undefined); setExplaining(undefined);
     if (!document || !ready || !preferences.saveReadingProgress) return;
@@ -151,6 +201,22 @@ export function Workbench() {
     window.document.addEventListener('keydown', keydown);
     return () => window.document.removeEventListener('keydown', keydown);
   }, [ready, settingsOpen, view, preferences, document, page]);
+  useEffect(() => {
+    if (!ready || settingsOpen || view !== 'reading' || !document || pageCount <= 1) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (pick || explaining || isEditableTarget(event.target) || event.altKey || event.ctrlKey || event.metaKey) return;
+      let next: number | undefined;
+      if (event.key === 'ArrowRight' || event.key === 'PageDown') next = page + 1;
+      else if (event.key === 'ArrowLeft' || event.key === 'PageUp') next = page - 1;
+      else if (event.key === 'Home') next = 1;
+      else if (event.key === 'End') next = pageCount;
+      if (next === undefined) return;
+      event.preventDefault();
+      setPage(clampPage(next, pageCount));
+    };
+    window.document.addEventListener('keydown', keydown);
+    return () => window.document.removeEventListener('keydown', keydown);
+  }, [ready, settingsOpen, view, document, page, pageCount, pick, explaining]);
 
   const explain = (selection: ReadingSelection) => {
     setPick(undefined); setExplaining(selection); setSideTab('explanation'); setSideOpen(true);
@@ -162,24 +228,40 @@ export function Workbench() {
     const selected = window.getSelection();
     if (!selected?.rangeCount || selected.isCollapsed) return false;
     const range = selected.getRangeAt(0);
-    const paper = viewport.current?.querySelector('.pdf-paper');
+    const paper = viewport.current?.querySelector('.pdf-paper, .epub-paper');
     if (!paper?.contains(range.startContainer) || !paper.contains(range.endContainer)) return false;
     const text = cleanSelection(selected.toString());
     if (!text) return false;
     if (preferences.englishOnly && !isLikelyEnglish(text)) return false;
-    const all = (paper as HTMLElement).dataset.pageText ?? text;
-    const spans = [...paper.querySelectorAll('.textLayer span')];
-    const startSpan = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest('span');
-    const startSpanIndex = spans.findIndex((span) => span === startSpan);
-    const prefixLength = startSpanIndex < 0 ? 0 : spans.slice(0, startSpanIndex).map((span) => span.textContent ?? '').join(' ').length;
-    let index = all.indexOf(text, Math.max(0, prefixLength - 1));
-    if (index < 0) index = all.indexOf(text);
+    let context = '';
+    if (text.length <= MAX_SELECTION_LENGTH) {
+      if (document.kind === 'epub') {
+        context = contextForRange(range, text).context;
+      } else {
+        const all = (paper as HTMLElement).dataset.pageText ?? text;
+        const spans = [...paper.querySelectorAll('.textLayer span')];
+        const startSpan = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest('span');
+        const startSpanIndex = spans.findIndex((span) => span === startSpan);
+        const prefixLength = startSpanIndex < 0 ? 0 : spans.slice(0, startSpanIndex).map((span) => span.textContent ?? '').join(' ').length;
+        let index = all.indexOf(text, Math.max(0, prefixLength - 1));
+        if (index < 0) index = all.indexOf(text);
+        context = windowContext(all, text, index).context;
+      }
+    }
     const rect = range.getBoundingClientRect();
-    const context = text.length > MAX_SELECTION_LENGTH ? '' : windowContext(all, text, index).context;
     const selection = { text, context, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
     if (opensImmediately(text, selection.immediate, confirmed, preferences)) explain(selection);
     else setPick(selection);
     return true;
+  };
+  const jumpToOutline = async (dest: PdfOutlineItem['dest']) => {
+    if (!pdf || !dest) return;
+    try {
+      const resolved = typeof dest === 'string' ? await pdf.getDestination(dest) : dest;
+      if (!Array.isArray(resolved)) return;
+      const pageIndex = await pdf.getPageIndex(resolved[0] as never);
+      setPage(clampPage(pageIndex + 1, pdf.numPages));
+    } catch { setNotice(t('无法跳转到该目录项。', 'Could not jump to that outline item.')); }
   };
   const updateStatus = async (item: ReaderItem, value: LearningStatus) => {
     if (!item.id) return;
@@ -198,13 +280,13 @@ export function Workbench() {
     } catch { setNotice(t('复习进度保存失败，请重试。', 'Could not save review progress. Please retry.')); }
   };
   const returnToSource = async (item: ReaderItem) => {
-    if (item.documentId === document?.id && pdf) {
-      setPage(clampPage(item.pageNumber ?? 1, pdf.numPages)); setView('reading'); setPick(undefined); return;
+    if (item.documentId === document?.id && (pdf || epub)) {
+      setPage(clampPage(item.pageNumber ?? 1, pageCount)); setView('reading'); setPick(undefined); return;
     }
     if (item.documentId) {
       const metadata = await readerDb.documents.get(item.documentId);
       if (metadata) await reopen({ ...metadata, currentPage: item.pageNumber ?? 1 });
-      else setNotice(t("找不到原文 PDF，请重新打开该文件。", "Original PDF not found. Please reopen it."));
+      else setNotice(t("找不到原文文档，请重新打开该文件。", "Original document not found. Please reopen it."));
     } else if (/^https?:\/\//.test(item.sourceUrl)) await chrome.tabs.create({ url: item.sourceUrl });
     else setNotice(t("这是一条旧的本地记录，请从阅读历史重新打开原文。", "This is an older local record. Reopen the original from history."));
   };
@@ -358,23 +440,24 @@ export function Workbench() {
   </>;
 
   return <div lang={preferences.uiLanguage} data-view={settingsOpen ? 'settings' : view} className={`workbench ${navOpen ? '' : 'nav-collapsed'} ${sideOpen ? '' : 'side-collapsed'} ${view === 'reading' && !settingsOpen ? '' : 'no-sidebar'}`}>
-    <input ref={input} type="file" accept="application/pdf,.pdf" onChange={chooseFile} hidden />
+    <input ref={input} type="file" accept="application/pdf,.pdf,application/epub+zip,.epub" onChange={chooseFile} hidden />
     <input ref={backupInput} type="file" accept="application/json,.json" aria-label={t('选择收藏备份文件', 'Choose collection backup')} onChange={(event) => { void chooseBackup(event); }} disabled={restoreBusy} hidden />
     <aside className="navigation"><button className="brand" aria-label={t("返回阅读", "Back to reading")} onClick={() => go('reading')}><span className="brand-mark" aria-hidden="true">◧</span><span className="brand-label">AI Context Reader<small>AI READING WORKSPACE</small></span></button><nav aria-label={t("主导航", "Main navigation")}><button aria-label={t("阅读", "Reading")} aria-current={!settingsOpen && view === 'reading' ? 'page' : undefined} onClick={() => go('reading')}><span aria-hidden="true">▤</span><span className="nav-label">{t('阅读', 'Reading')}</span></button><button aria-label={t("我的收藏", "My favorites")} aria-current={!settingsOpen && view === 'library' ? 'page' : undefined} onClick={() => go('library')}><span aria-hidden="true">▣</span><span className="nav-label">{t('我的收藏', 'My favorites')}</span></button><button aria-label={t("阅读历史", "History")} aria-current={!settingsOpen && view === 'history' ? 'page' : undefined} onClick={() => go('history')}><span aria-hidden="true">◷</span><span className="nav-label">{t('阅读历史', 'History')}</span></button><button aria-label={t("复习", "Review")} aria-current={!settingsOpen && view === 'review' ? 'page' : undefined} onClick={() => go('review')}><span aria-hidden="true">↻</span><span className="nav-label">{t('复习', 'Review')}</span>{reviewData.due.length > 0 && <span className="nav-count">{reviewData.due.length}</span>}</button><button ref={settingsButton} aria-label={t("设置", "Settings")} aria-current={settingsOpen ? 'page' : undefined} onClick={() => { setPick(undefined); setNotice(''); setSettingsOpen(true); }}><span aria-hidden="true">⚙</span><span className="nav-label">{t('设置', 'Settings')}</span></button></nav><div className="nav-bottom"><p>{t('理解一个词，读懂更大的世界。', 'Understand a word. Discover a wider world.')}</p><span>{t('文件与收藏保存在本机', 'Files and favorites stay local')}</span></div><button className="nav-collapse" aria-label={navOpen ? t("收起导航", "Collapse navigation") : t("展开导航", "Expand navigation")} onClick={() => setNavOpen(!navOpen)}>{navOpen ? '‹' : '›'}</button></aside>
     <main className="workspace-main">
-      <header className="workspace-toolbar"><div className="toolbar-inner"><div><h1 title={!settingsOpen && view === 'reading' ? document?.name : undefined}>{settingsOpen ? t("设置", "Settings") : view === 'library' ? kind === 'vocabulary' ? t("我的生词库", "My vocabulary") : t("我的摘录", "My excerpts") : view === 'history' ? t("阅读历史", "History") : view === 'review' ? t("复习", "Review") : document?.name ?? t("阅读，从这里开始", "Start reading here")}</h1>{!settingsOpen && view === 'library' && <p className="toolbar-subtitle">{t('点击卡片展开，回看当时的理解。', 'Expand a card to revisit its context.')}</p>}</div>{!settingsOpen && <div className="toolbar-actions">{view === 'reading' && <><button onClick={() => input.current?.click()} disabled={busy}>{t('＋ 打开 PDF', '＋ Open PDF')}</button><button aria-label={sideOpen ? t("收起收藏栏", "Hide library") : t("展开收藏栏", "Show library")} onClick={() => setSideOpen(!sideOpen)}>☷</button></>}{view === 'library' && <><button ref={backupButton} popoverTarget="backup-menu" disabled={restoreBusy} onClick={(event) => { const menu = window.document.getElementById('backup-menu')!; const rect = event.currentTarget.getBoundingClientRect(); menu.style.left = `${Math.max(12, Math.min(rect.right - 280, innerWidth - 292))}px`; menu.style.top = `${Math.max(12, Math.min(rect.bottom + 8, innerHeight - 220))}px`; }}>{t('备份与恢复', 'Backup and restore')}</button><div className="item-menu backup-menu" id="backup-menu" popover="auto" role="group" aria-label={t('备份与恢复菜单', 'Backup and restore menu')}><button disabled={!items.length || restoreBusy} onClick={(event) => { event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover(); downloadItems(items, `ai-context-reader-backup-${new Date().toISOString().slice(0, 10)}.json`); }}>{t('备份全部收藏', 'Back up all favorites')}</button><button disabled={restoreBusy} onClick={(event) => { event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover(); backupInput.current?.click(); }}>{t('恢复备份…', 'Restore backup…')}</button><p>{t('仅收藏与原句，不含 API Key 或 PDF 文件。', 'Favorites and sentences only; no API keys or PDF files.')}</p></div></>}{view === 'library' && scopedItems.some((item) => collectionKind(item) === kind) && <button onClick={() => exportItems('json')} disabled={!filtered.length}>{t('导出当前列表', 'Export list')} · {filtered.length}</button>}</div>}</div></header>
+      <header className="workspace-toolbar"><div className="toolbar-inner"><div><h1 title={!settingsOpen && view === 'reading' ? document?.name : undefined}>{settingsOpen ? t("设置", "Settings") : view === 'library' ? kind === 'vocabulary' ? t("我的生词库", "My vocabulary") : t("我的摘录", "My excerpts") : view === 'history' ? t("阅读历史", "History") : view === 'review' ? t("复习", "Review") : document?.name ?? t("阅读，从这里开始", "Start reading here")}</h1>{!settingsOpen && view === 'library' && <p className="toolbar-subtitle">{t('点击卡片展开，回看当时的理解。', 'Expand a card to revisit its context.')}</p>}</div>{!settingsOpen && <div className="toolbar-actions">{view === 'reading' && <><button onClick={() => input.current?.click()} disabled={busy}>{t('＋ 打开文档', '＋ Open document')}</button><button aria-label={sideOpen ? t("收起收藏栏", "Hide library") : t("展开收藏栏", "Show library")} onClick={() => setSideOpen(!sideOpen)}>☷</button></>}{view === 'library' && <><button ref={backupButton} popoverTarget="backup-menu" disabled={restoreBusy} onClick={(event) => { const menu = window.document.getElementById('backup-menu')!; const rect = event.currentTarget.getBoundingClientRect(); menu.style.left = `${Math.max(12, Math.min(rect.right - 280, innerWidth - 292))}px`; menu.style.top = `${Math.max(12, Math.min(rect.bottom + 8, innerHeight - 220))}px`; }}>{t('备份与恢复', 'Backup and restore')}</button><div className="item-menu backup-menu" id="backup-menu" popover="auto" role="group" aria-label={t('备份与恢复菜单', 'Backup and restore menu')}><button disabled={!items.length || restoreBusy} onClick={(event) => { event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover(); downloadItems(items, `ai-context-reader-backup-${new Date().toISOString().slice(0, 10)}.json`); }}>{t('备份全部收藏', 'Back up all favorites')}</button><button disabled={restoreBusy} onClick={(event) => { event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover(); backupInput.current?.click(); }}>{t('恢复备份…', 'Restore backup…')}</button><p>{t('仅收藏与原句，不含 API Key 或 PDF 文件。', 'Favorites and sentences only; no API keys or PDF files.')}</p></div></>}{view === 'library' && scopedItems.some((item) => collectionKind(item) === kind) && <button onClick={() => exportItems('json')} disabled={!filtered.length}>{t('导出当前列表', 'Export list')} · {filtered.length}</button>}</div>}</div></header>
       {notice && <div className="workspace-notice" role="alert"><span>{notice}</span><button aria-label={t("关闭提示", "Dismiss notice")} onClick={() => setNotice('')}>×</button></div>}
       <div className="workspace-content" hidden={settingsOpen}>
       {busy && <div className="workspace-busy" role="status">{t('正在打开文档…', 'Opening document…')}</div>}
       {view === 'reading' && <>
-        {pdf && document && <div className="pdf-toolbar"><div className="page-control"><button aria-label={t("上一页", "Previous page")} disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>‹</button><form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setPage(clampPage(Number(data.get('page')), pdf.numPages)); }}><input key={page} name="page" aria-label={t("页码", "Page")} type="number" min="1" max={pdf.numPages} defaultValue={page} onBlur={(event) => setPage(clampPage(Number(event.target.value), pdf.numPages))} /><span>/ {pdf.numPages}</span></form><button aria-label={t("下一页", "Next page")} disabled={page >= pdf.numPages} onClick={() => setPage((value) => value + 1)}>›</button></div><select aria-label={t("缩放", "Zoom")} value={zoom} onChange={(event) => setZoom(event.target.value)}><option value="fit">{t('适应宽度', 'Fit width')}</option>{['0.75', '1', '1.25', '1.5', '2'].map((value) => <option key={value} value={value}>{Number(value) * 100}%</option>)}</select><span className="local-note">{t('本地 PDF · 双击单词或拖选文字', 'Local PDF · Double-click a word or select text')}</span></div>}
-        <div className="reading-viewport" ref={viewport} onDragOver={(event) => event.preventDefault()} onDrop={drop}>
-          {pdf && document ? <PdfPage pdf={pdf} pageNumber={page} width={width} zoom={zoom} onSelect={capture} onError={setNotice} language={preferences.uiLanguage} /> : <div className="reading-empty"><span className="empty-book" aria-hidden="true">▤</span><p className="empty-eyebrow">READ. UNDERSTAND. REMEMBER.</p><h2>{t('把阅读，变成理解。', 'Read for understanding.')}</h2><p>{t('打开一份 PDF，选中不懂的词。释义联系上下文，值得记住的内容留在身边。', 'Open a PDF and select unfamiliar words. Understand them in context and save what matters.')}</p><button className="primary-button" onClick={() => input.current?.click()} disabled={busy}>{t('选择本地 PDF', 'Choose local PDF')}</button><span className="drop-hint">{t('也可以把文件拖到这里 · 支持可选择文字的 PDF', 'Or drop a PDF here · Selectable text required')}</span><div className="onboarding-steps"><p>{t('第一次使用？三步开始', 'First time? Three steps')}</p><ol><li>{t('配置 AI 服务商与密钥', 'Connect an AI provider')}</li><li>{t('打开 PDF，或在任意网页选中文字', 'Open a PDF, or select text on any page')}</li><li>{t('保存生词或摘录，随时回看', 'Save words or excerpts to revisit')}</li></ol><button className="onboarding-cta" onClick={() => setSettingsOpen(true)}>{t('配置 AI 模型', 'Configure AI')}</button></div>{history[0] && <button className="continue-button" onClick={() => { void reopen(history[0]!); }}>{t('继续阅读：', 'Continue: ')}{history[0].name} · {t('页码', 'Page')} {history[0].currentPage} →</button>}</div>}
+        {pdf && document && <div className="pdf-toolbar"><div className="page-control"><button aria-label={t("上一页", "Previous page")} disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>‹</button><form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setPage(clampPage(Number(data.get('page')), pdf.numPages)); }}><input key={page} name="page" aria-label={t("页码", "Page")} type="number" min="1" max={pdf.numPages} defaultValue={page} onBlur={(event) => setPage(clampPage(Number(event.target.value), pdf.numPages))} /><span>/ {pdf.numPages}</span></form><button aria-label={t("下一页", "Next page")} disabled={page >= pdf.numPages} onClick={() => setPage((value) => value + 1)}>›</button></div><select aria-label={t("缩放", "Zoom")} value={zoom} onChange={(event) => setZoom(event.target.value)}><option value="fit">{t('适应宽度', 'Fit width')}</option><option value="page">{t('适合页面', 'Fit page')}</option>{['0.75', '1', '1.25', '1.5', '2'].map((value) => <option key={value} value={value}>{Number(value) * 100}%</option>)}</select><PdfOutline items={outline} onJump={jumpToOutline} t={t} /><button className={`night-toggle${night ? ' active' : ''}`} aria-pressed={night} aria-label={t('夜间模式', 'Night mode')} onClick={() => setNight(!night)}>☾</button><span className="local-note">{t('本地 PDF · ←/→ 翻页 · 双击单词或拖选文字', 'Local PDF · ←/→ pages · Double-click a word or select text')}</span></div>}
+        {epub && document && <div className="pdf-toolbar epub-toolbar"><div className="page-control"><button aria-label={t("上一章", "Previous chapter")} disabled={page <= 1} onClick={() => setPage((value) => clampPage(value - 1, pageCount))}>‹</button><select aria-label={t("章节", "Chapter")} value={page} onChange={(event) => setPage(Number(event.target.value))}>{epub.chapters.map((entry, index) => <option key={entry.id} value={index + 1}>{index + 1}. {entry.title}</option>)}</select><button aria-label={t("下一章", "Next chapter")} disabled={page >= pageCount} onClick={() => setPage((value) => clampPage(value + 1, pageCount))}>›</button></div><div className="epub-font-controls"><button aria-label={t("缩小字号", "Decrease font size")} onClick={() => setZoom(String(Math.max(70, epubFont - 10)))}>A−</button><span>{epubFont}%</span><button aria-label={t("放大字号", "Increase font size")} onClick={() => setZoom(String(Math.min(180, epubFont + 10)))}>A＋</button></div><button className={`night-toggle${night ? ' active' : ''}`} aria-pressed={night} aria-label={t('夜间模式', 'Night mode')} onClick={() => setNight(!night)}>☾</button><span className="local-note">{t('本地 EPUB · ←/→ 章节 · 双击或拖选文字', 'Local EPUB · ←/→ chapters · Select text')}</span></div>}
+        <div className={`reading-viewport${night ? ' night' : ''}`} ref={viewport} onDragOver={(event) => event.preventDefault()} onDrop={drop}>
+          {pdf && document ? <PdfPage pdf={pdf} pageNumber={page} width={width} height={height} zoom={zoom} onSelect={capture} onError={setNotice} language={preferences.uiLanguage} /> : chapter && document ? <EpubPage chapter={chapter} fontSize={epubFont} onSelect={capture} /> : <div className="reading-empty"><span className="empty-book" aria-hidden="true">▤</span><p className="empty-eyebrow">READ. UNDERSTAND. REMEMBER.</p><h2>{t('把阅读，变成理解。', 'Read for understanding.')}</h2><p>{t('打开一份 PDF 或 EPUB，选中不懂的词。释义联系上下文，值得记住的内容留在身边。', 'Open a PDF or EPUB and select unfamiliar words. Understand them in context and save what matters.')}</p><button className="primary-button" onClick={() => input.current?.click()} disabled={busy}>{t('选择本地文档', 'Choose local document')}</button><span className="drop-hint">{t('也可以把文件拖到这里 · 支持 PDF 与 EPUB', 'Or drop a file here · PDF and EPUB supported')}</span><div className="onboarding-steps"><p>{t('第一次使用？三步开始', 'First time? Three steps')}</p><ol><li>{t('配置 AI 服务商与密钥', 'Connect an AI provider')}</li><li>{t('打开 PDF/EPUB，或在任意网页选中文字', 'Open a PDF/EPUB, or select text on any page')}</li><li>{t('保存生词或摘录，随时回看', 'Save words or excerpts to revisit')}</li></ol><button className="onboarding-cta" onClick={() => setSettingsOpen(true)}>{t('配置 AI 模型', 'Configure AI')}</button></div>{history[0] && <button className="continue-button" onClick={() => { void reopen(history[0]!); }}>{t('继续阅读：', 'Continue: ')}{history[0].name} · {history[0].kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {history[0].currentPage} →</button>}</div>}
         </div>
       </>}
       {view === 'review' && <ReviewPage due={reviewData.due} dueCount={reviewData.dueCount} newCount={reviewData.newCount} language={preferences.uiLanguage} t={t} onRate={rateReview} onOpen={openSource} onGoLibrary={() => go('library')} />}
       {view === 'library' && <section className="library-page">{pendingRestore && restorePlan && <section className="restore-preview" ref={restorePreview} tabIndex={-1} aria-labelledby="restore-heading" onKeyDown={(event) => { if (event.key === 'Escape' && !restoreBusy) cancelRestore(); }}><h2 id="restore-heading">{t('恢复备份预览', 'Restore preview')}</h2><p className="restore-filename">{pendingRestore.name}</p><p>{t(`备份包含 ${pendingRestore.items.length} 条语境，预计新增 ${restorePlan.additions.length} 条、跳过 ${restorePlan.skipped} 条重复内容。`, `The backup contains ${pendingRestore.items.length} contexts: ${restorePlan.additions.length} expected additions, ${restorePlan.skipped} duplicates.`)}</p><p>{t('只合并新增语境，不覆盖已有收藏和学习状态。不恢复 API Key、阅读设置或原 PDF 文件；本机缺少的 PDF 需要重新打开。', 'Adds new contexts without replacing favorites or learning states. API keys, settings and PDF files are not restored. Reopen missing PDFs locally.')}</p><div className="restore-actions"><button className="primary-button" disabled={restoreBusy} onClick={() => { void confirmRestore(); }}>{restoreBusy ? t('正在恢复…', 'Restoring…') : t('确认恢复', 'Confirm restore')}</button><button disabled={restoreBusy} onClick={cancelRestore}>{t('取消，不恢复', 'Cancel restore')}</button></div></section>}{collection}</section>}
-      {view === 'history' && <section className="history-page"><p className="page-intro">{t('你的文件和历史只留在这台设备上。关闭历史不会删除已有记录或收藏。', 'Files and history stay on this device. Turning history off does not delete existing records or favorites.')}</p><h2>{t('本地 PDF', 'Local PDFs')}</h2><p className="page-intro">{preferences.saveReadingProgress ? t('正在保存阅读进度。', 'Reading progress is enabled.') : t('阅读进度保存已关闭；新打开文件只在当前页面保留。', 'Progress saving is off. Newly opened files stay in this tab only.')}</p>{history.length ? history.map((entry) => <div className="history-row" key={entry.id}><button className="history-item" onClick={() => { void reopen(entry); }}><span className="history-icon" aria-hidden="true">▤</span><div><h2>{entry.name}</h2><p>{t('页码', 'Page')} {entry.currentPage} / {entry.pageCount} · {new Date(entry.lastOpenedAt).toLocaleDateString(preferences.uiLanguage)}</p></div><span>{t('继续阅读 →', 'Continue reading →')}</span></button><button className="history-delete" onClick={() => { void removeDocument(entry); }}>{t('删除', 'Delete')}</button></div>) : <div className="history-empty">{t('还没有已保存的 PDF 阅读记录。', 'No saved PDF history yet.')}</div>}<div className="section-heading"><h2>{t('查询历史', 'Query history')}</h2>{queries.length > 0 && <button className="quiet-danger" onClick={() => { void removeQueryHistory(); }}>{t('清空查询历史', 'Clear history')}</button>}</div><p className="page-intro">{preferences.saveQueryHistory ? t('仅记录成功查询，最多保留最近 200 条。', 'Only successful queries are saved, up to 200 recent entries.') : t('查询历史保存已关闭。主动收藏不受影响。', 'Query history is off. Favorites are unaffected.')}</p>{queries.length ? queries.map((entry) => <article className="history-item" key={entry.id}><div><h2>{entry.text}</h2><p>{entry.sourceTitle}{entry.pageNumber ? ` · ${t('页码', 'Page')} ${entry.pageNumber}` : ''} · {new Date(entry.createdAt).toLocaleString(preferences.uiLanguage)}</p><p>{entry.sourceUrl}</p></div></article>) : <div className="history-empty">{t('没有查询历史。', 'No query history.')}</div>}</section>}
+      {view === 'history' && <section className="history-page"><p className="page-intro">{t('你的文件和历史只留在这台设备上。关闭历史不会删除已有记录或收藏。', 'Files and history stay on this device. Turning history off does not delete existing records or favorites.')}</p><h2>{t('本地文档', 'Local documents')}</h2><p className="page-intro">{preferences.saveReadingProgress ? t('正在保存阅读进度。', 'Reading progress is enabled.') : t('阅读进度保存已关闭；新打开文件只在当前页面保留。', 'Progress saving is off. Newly opened files stay in this tab only.')}</p>{history.length ? history.map((entry) => <div className="history-row" key={entry.id}><button className="history-item" onClick={() => { void reopen(entry); }}><span className="history-icon" aria-hidden="true">▤</span><div><h2>{entry.name}</h2><p>{entry.kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {entry.currentPage} / {entry.pageCount} · {new Date(entry.lastOpenedAt).toLocaleDateString(preferences.uiLanguage)}</p></div><span>{t('继续阅读 →', 'Continue reading →')}</span></button><button className="history-delete" onClick={() => { void removeDocument(entry); }}>{t('删除', 'Delete')}</button></div>) : <div className="history-empty">{t('还没有已保存的文档阅读记录。', 'No saved document history yet.')}</div>}<div className="section-heading"><h2>{t('查询历史', 'Query history')}</h2>{queries.length > 0 && <button className="quiet-danger" onClick={() => { void removeQueryHistory(); }}>{t('清空查询历史', 'Clear history')}</button>}</div><p className="page-intro">{preferences.saveQueryHistory ? t('仅记录成功查询，最多保留最近 200 条。', 'Only successful queries are saved, up to 200 recent entries.') : t('查询历史保存已关闭。主动收藏不受影响。', 'Query history is off. Favorites are unaffected.')}</p>{queries.length ? queries.map((entry) => <article className="history-item" key={entry.id}><div><h2>{entry.text}</h2><p>{entry.sourceTitle}{entry.pageNumber ? ` · ${t('页码', 'Page')} ${entry.pageNumber}` : ''} · {new Date(entry.createdAt).toLocaleString(preferences.uiLanguage)}</p><p>{entry.sourceUrl}</p></div></article>) : <div className="history-empty">{t('没有查询历史。', 'No query history.')}</div>}</section>}
       </div>
       {settingsOpen && <div className="settings-page"><Suspense fallback={<p className="settings-loading" role="status">{t('正在加载设置…', 'Loading settings…')}</p>}><SettingsForm onSaved={(savedPreferences) => { returnFromSettings(); setNotice(uiText(savedPreferences.uiLanguage)('设置已保存，后续取词将使用新设置。', 'Settings saved. New queries will use these preferences.')); }} onCancel={returnFromSettings} /></Suspense></div>}
     </main>

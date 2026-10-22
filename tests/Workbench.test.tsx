@@ -16,15 +16,15 @@ const word: ReaderItem = { id: 1, uniqueKey: 'word', selectedText: 'undermine', 
 
 function render(view: 'reading' | 'library' | 'history', items: ReaderItem[] = [], kind: CollectionKind = 'vocabulary', query = '', relatedFor?: ReaderItem, pendingRestore?: { name: string; items: ReaderItem[] }) {
   // Match Workbench state initialization; effects are intentionally not run by server rendering.
-  state.values = [view, false, true, true, items, [], undefined, undefined, 1, 'fit', 900, false, '', undefined, kind, 'all', 'all', query];
+  state.values = [view, false, true, true, items, [], undefined, undefined, undefined, undefined, 1, 'fit', 900, 700, false, false, '', undefined, kind, 'all', 'all', query];
   if (relatedFor || pendingRestore) state.values.push(DEFAULT_PREFERENCES, true, [], undefined, 'library', relatedFor && favoriteKey(relatedFor), pendingRestore, false);
   return renderToStaticMarkup(<Workbench />);
 }
 
-it.each(['reading', 'library', 'history'] as const)('only offers PDF opening on the reading page (%s)', (view) => {
+it.each(['reading', 'library', 'history'] as const)('only offers document opening on the reading page (%s)', (view) => {
   const markup = render(view);
-  if (view === 'reading') expect(markup).toContain('＋ 打开 PDF');
-  else expect(markup).not.toContain('打开 PDF');
+  if (view === 'reading') expect(markup).toContain('＋ 打开文档');
+  else expect(markup).not.toContain('打开文档');
   if (view === 'reading') expect(markup).toContain('配置 AI 模型');
 });
 
@@ -130,7 +130,7 @@ it('shows one word card with both original contexts and return actions', () => {
 });
 
 it('renders an explanation in the PDF sidebar without a floating dialog or selection/classification card', () => {
-  state.values = ['reading', false, true, true, [], [], undefined, undefined, 1, 'fit', 900, false, '', undefined, 'vocabulary', 'all', 'all', '', DEFAULT_PREFERENCES, true, [], { text: 'undermine', context: 'The strategy could undermine profitability.', sourceUrl: 'local-pdf:doc', sourceTitle: 'doc.pdf', documentId: 'doc', pageNumber: 1 }, 'explanation'];
+  state.values = ['reading', false, true, true, [], [], undefined, undefined, undefined, undefined, 1, 'fit', 900, 700, false, false, '', undefined, 'vocabulary', 'all', 'all', '', DEFAULT_PREFERENCES, true, [], { text: 'undermine', context: 'The strategy could undermine profitability.', sourceUrl: 'local-pdf:doc', sourceTitle: 'doc.pdf', documentId: 'doc', pageNumber: 1 }, 'explanation'];
   const markup = renderToStaticMarkup(<Workbench />);
   expect(markup).toContain('aria-label="阅读侧栏"');
   expect(markup).toContain('acr-card acr-panel');

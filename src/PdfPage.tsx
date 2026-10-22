@@ -2,9 +2,9 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { TextLayer, type PDFDocumentProxy, type RenderTask } from 'pdfjs-dist';
 import { uiText } from './preferences';
 
-type Props = { pdf: PDFDocumentProxy; pageNumber: number; width: number; zoom: string; onError: (message: string) => void; onSelect: (event: MouseEvent) => void; language?: 'zh-CN' | 'en' };
+type Props = { pdf: PDFDocumentProxy; pageNumber: number; width: number; height: number; zoom: string; onError: (message: string) => void; onSelect: (event: MouseEvent) => void; language?: 'zh-CN' | 'en' };
 
-export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, language = 'zh-CN' }: Props) {
+export function PdfPage({ pdf, pageNumber, width, height, zoom, onError, onSelect, language = 'zh-CN' }: Props) {
   const t = uiText(language);
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onError });
@@ -20,8 +20,10 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, langu
       const page = await pdf.getPage(pageNumber);
       if (!active || !host.current) return;
       const base = page.getViewport({ scale: 1 });
-      const requestedZoom = zoom === 'fit' ? 'fit' : Number.isFinite(Number(zoom)) ? Math.max(.25, Math.min(4, Number(zoom))) : 'fit';
-      const scale = requestedZoom === 'fit' ? Math.max(.25, Math.min(2, (width - 64) / base.width)) : requestedZoom;
+      const requestedZoom = zoom === 'fit' || zoom === 'page' ? zoom : Number.isFinite(Number(zoom)) ? Math.max(.25, Math.min(4, Number(zoom))) : 'fit';
+      const fitWidth = (width - 64) / base.width;
+      const fitPage = Math.min(fitWidth, (height - 88) / base.height);
+      const scale = requestedZoom === 'fit' ? Math.max(.25, Math.min(2, fitWidth)) : requestedZoom === 'page' ? Math.max(.25, Math.min(2, fitPage)) : requestedZoom;
       const viewport = page.getViewport({ scale });
       const ratio = Math.min(window.devicePixelRatio || 1, 2);
       const canvas = document.createElement('canvas');
@@ -55,7 +57,7 @@ export function PdfPage({ pdf, pageNumber, width, zoom, onError, onSelect, langu
       callbacks.current.onError(error instanceof Error ? `页面加载失败：${error.message}` : '页面加载失败，请重新打开文件。');
     });
     return () => { active = false; renderTask?.cancel(); textLayer?.cancel(); };
-  }, [pdf, pageNumber, width, zoom, language]);
+  }, [pdf, pageNumber, width, height, zoom, language]);
   return <div className="pdf-stage">
     {loading && <div className="page-loading" role="status">{t('正在绘制页面…', 'Rendering page…')}</div>}
     <div ref={host} className="pdf-paper" onMouseUp={onSelect} onDoubleClick={onSelect} />
