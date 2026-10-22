@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.8 - 2026-10-22
+
+### POS spacing and separator cleanup
+
+- Render multi-POS rows inline with exactly one normal space between the part of speech and the definition.
+- Remove the `·` separator before the contextual translation; it now reads `n. 释义` instead of `n. · 释义`.
+
+### Engineering
+
+- 254 automated tests, typecheck and production build passing.
+
 ## 0.7.7 - 2026-10-22
 
 ### Standard definition first

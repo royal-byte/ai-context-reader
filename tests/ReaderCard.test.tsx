@@ -46,6 +46,9 @@ it('renders standard senses first and context meaning afterwards', () => {
   expect(markup).toContain('标准释义');
   expect(markup).toContain('记录；录制');
   expect(markup).toContain('/rɪˈkɔːrd/');
+  expect(markup).toContain('n.</span> <span class="acr-sense-definition">纪录');
+  expect(markup).toContain('<span class="acr-pos">n. </span>纪录');
+  expect(markup).not.toContain('n. ·');
   expect(markup.indexOf('标准释义')).toBeLessThan(markup.indexOf('语境义'));
 });
 
