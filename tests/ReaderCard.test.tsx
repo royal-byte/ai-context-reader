@@ -25,6 +25,17 @@ it.each([
   if (text.endsWith('.')) expect(markup).not.toContain(text);
 });
 
+it('shows the local dictionary as the standard definition before the AI responds', () => {
+  state.values = [undefined, true, false, '', '', 0, 'new', false, false, {
+    word: 'harness', phonetic: "/'hɑ:nis/", translation: 'n. 马具, 挽具; vt. 利用', partOfSpeech: 'n. / vt.'
+  }];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'harness', context: 'A harness structure.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('标准释义');
+  expect(markup).toContain('马具');
+  expect(markup).toContain('n. / vt.');
+  expect(markup).not.toContain('本地词典');
+});
+
 it.each([
   ['phrase', false, '保存到生词库'],
   ['sentence', false, '保存为摘录'],

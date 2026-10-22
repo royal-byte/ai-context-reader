@@ -11,6 +11,11 @@ export function normalizeDictionaryWord(value: string) {
   return value.toLowerCase().replace(/[^a-z'-]/g, '').replace(/^'+|'+$/g, '');
 }
 
+/** Remove the first dictionary POS prefix when the UI already renders one. */
+export function stripDictionaryPos(value: string) {
+  return value.replace(/^(?:n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj)\.\s*/i, '');
+}
+
 /** Conservative fallbacks for common inflections; never invent a definition. */
 export function dictionaryCandidates(word: string) {
   const base = normalizeDictionaryWord(word);

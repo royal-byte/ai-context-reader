@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.3 - 2026-10-22
+
+### Local standard definitions
+
+- For words, the “standard definition” now comes from the bundled ECDICT subset first, not from the model's contextual `definition`.
+- Show the local Chinese definition, all bundled senses and part of speech immediately while the AI request is still loading.
+- Use AI only for the contextual meaning (`translation`), the contextual explanation, and sentence translation; if the local entry is missing, fall back to the model's definition.
+- Save the local standard definition/part of speech/phonetic with the favorite, so the library does not inherit the model's contextual gloss.
+- Examples: `harness` standard shows 马具/挽具/利用 while context can be 框架结构; `agent` standard shows 代理商/代理程序 while context can be 智能体.
+
+### Engineering
+
+- 250 automated tests, typecheck and production build passing.
+
 ## 0.7.2 - 2026-10-22
 
 ### Chinese definitions

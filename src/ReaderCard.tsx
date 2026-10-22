@@ -6,7 +6,7 @@ import type { Explanation, ReaderItem, ContextPacket } from './types';
 import { formatPartOfSpeech, type FavoriteState } from './library';
 import { keepServiceWorkerAlive } from './keepalive';
 import { speakEnglish } from './speech';
-import type { DictionaryEntry } from './dictionary';
+import { stripDictionaryPos, type DictionaryEntry } from './dictionary';
 
 export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number; packet?: ContextPacket };
 type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
@@ -29,8 +29,10 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const [local, setLocal] = useState<DictionaryEntry>();
   const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
-  const partOfSpeech = result?.partOfSpeech || local?.partOfSpeech;
-  const phonetic = result?.phonetic || local?.phonetic;
+  const localDefinition = local ? stripDictionaryPos(local.translation) : '';
+  const standardDefinition = mode === 'word' ? localDefinition || result?.definition : result?.definition;
+  const partOfSpeech = mode === 'word' ? local?.partOfSpeech || result?.partOfSpeech : result?.partOfSpeech;
+  const phonetic = mode === 'word' ? local?.phonetic || result?.phonetic : result?.phonetic;
   const headword = result?.lemma || local?.word || text;
   useEffect(() => presentation === 'popup' && card.current ? dismissCardOnOutsidePress(card.current, close) : undefined, [close, presentation]);
   useEffect(() => {
@@ -75,7 +77,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
     if (event && event.isTrusted === false) return;
     if (!result || loading || saving) return;
     setSaving(true); setError('');
-    const item: Omit<ReaderItem, 'uniqueKey' | 'createdAt'> = { ...result, mode, selectedText: text, context, sourceSentence: sentence, sourceUrl, sourceTitle, documentId, pageNumber };
+    const item: Omit<ReaderItem, 'uniqueKey' | 'createdAt'> = { ...result, definition: standardDefinition || result.definition, partOfSpeech: partOfSpeech || result.partOfSpeech, phonetic: phonetic || result.phonetic, mode, selectedText: text, context, sourceSentence: sentence, sourceUrl, sourceTitle, documentId, pageNumber };
     try {
       const response = await chrome.runtime.sendMessage({ type: 'save', item });
       if (response?.ok) { setSaved(response.outcome ?? 'saved'); if (response.warning) setError(response.warning); onSaved?.(); }
@@ -93,10 +95,9 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
       {cached && !loading && <p className="acr-cache">{t('来自本机缓存 · 未重复请求模型', 'From local cache · no new model request')}</p>}
       {loading && <p className="acr-loading" role="status">{t('正在结合上下文理解…', 'Understanding in context…')}</p>}
       {error && <div className="acr-error" role="alert">{!loading && !result ? <><p>{t('AI 解释暂时不可用，请重试。', 'AI explanation is temporarily unavailable. Please retry.')}</p><details><summary>{t('查看原因', 'Show details')}</summary><p>{error}</p></details><button onClick={() => setRetry((n) => n + 1)}>{t('重试', 'Retry')}</button></> : <p>{error}</p>}</div>}
-      {!result && local && <section className="acr-standard acr-local"><h3>{t('本地词典', 'Local dictionary')}</h3><p>{local.partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(local.partOfSpeech)} · </span>}{local.translation}</p></section>}
+      {(result || (mode === 'word' && local)) && <section className="acr-standard"><h3>{shortSelection ? t('标准释义', 'Definition') : mode === 'sentence' ? t('自然翻译', 'Translation') : t('内容摘要', 'Summary')}</h3><p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{mode === 'sentence' ? result?.translation : standardDefinition}</p></section>}
       {!loading && result && <>
-        <section className="acr-standard"><h3>{shortSelection ? t('标准释义', 'Definition') : mode === 'sentence' ? t('自然翻译', 'Translation') : t('内容摘要', 'Summary')}</h3><p>{mode === 'word' && partOfSpeech && <span className="acr-pos">{formatPartOfSpeech(partOfSpeech)} · </span>}{mode === 'sentence' ? result.translation : result.definition}</p></section>
-        {shortSelection && result.translation && result.translation !== result.definition && <section className="acr-translation"><h3>{t('语境义', 'In context')}</h3><p>{result.translation}</p></section>}
+        {shortSelection && result.translation && result.translation !== standardDefinition && <section className="acr-translation"><h3>{t('语境义', 'In context')}</h3><p>{result.translation}</p></section>}
         <section className="acr-context"><h3>{t('上下文释义', 'Meaning in context')} <span className="acr-ai">AI</span></h3><p>{result.explanation}</p></section>
         {shortSelection && result.sentenceTranslation && <section className="acr-translation"><h3>{t('整句翻译', 'Sentence translation')}</h3><p>{result.sentenceTranslation}</p></section>}
         {mode === 'phrase' && result.usage && <details className="acr-details"><summary>{t('用法与搭配', 'Usage and collocations')}</summary><p>{result.usage}</p></details>}

@@ -140,3 +140,5 @@ PDF 侧新增键盘翻页（不拦截可编辑控件和卡片打开状态）、`
 后台 `analyze` 用 packet 生成缓存 key 和 prompt；`requestExplanation` 再校验一次，将 packet 作为“引用材料”传给模型，而不是让模型执行其中的指令。Prompt 保持 `definition` 为常见词典义、`translation` 为语境义，`explanation` 只解释语境判断且不重复前两者；`partOfSpeech` 取语境词性，多词性不全部罗列。落在 `src/context.test.ts`、`selection-packet.test.ts` 和 `query-privacy.test.ts`。
 
 v0.7.2 进一步把 `definition` 的语言钉死为简体中文：Prompt 禁止英文词典释义，缓存版本升到 v3；后台 `ensureChineseDefinition` 在单词定义仍为英文时用本地 ECDICT 子集补齐中文标准义/词性/音标，在短语/句子/段落仍为英文时用中文语境翻译兜底，避免 UI 出现纯英文“标准释义”。
+
+v0.7.3 把单词的“标准释义”所有权从模型移回本地词典：`ReaderCard` 先请求 `dictionary-lookup`，单词模式用 `local.translation`（去掉首词性前缀）和 `local.partOfSpeech` 渲染标准义，AI 的 `definition` 只作为本地缺词时的 fallback；语境义仍取 AI `translation`。标准义在 AI 加载期间就显示，保存收藏时也写入本地标准义/词性/音标，避免生词库保存模型的语境义。
