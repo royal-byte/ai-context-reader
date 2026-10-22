@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.7 - 2026-10-22
+
+### Standard definition first
+
+- Move the local standard definition above the contextual meaning so it appears immediately while the AI request is still loading.
+- Keep the contextual meaning and explanation below the dictionary senses.
+- Tighten the part-of-speech column and spacing in multi-POS rows.
+
+### Engineering
+
+- 254 automated tests, typecheck and production build passing.
+
 ## 0.7.6 - 2026-10-22
 
 ### Paragraph output robustness

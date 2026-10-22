@@ -148,3 +148,5 @@ v0.7.4 修复 PDF “适合页面”抖动：`.reading-viewport` 使用 `scrollb
 v0.7.5 把本地词典的 `translation` 在加载时解析为按词性分组的 senses：`parseDictionarySenses` 按 `;`/换行和 POS 前缀拆分，并用 `HETERONYMS` 给常见异音词补按词性音标。`ReaderCard` 先渲染语境义，再渲染 `SenseList`（语境词性优先）；`normalizeDictionaryGloss` 只对完全相同的标准义与语境义去重，子集/特化不会误合并。收藏仍写回完整标准释义字符串，避免数据库 schema 变化。
 
 v0.7.6 把模型输出中的 `examples` 从硬校验改为可选元数据：`explanationExamples` 对缺失返回 `[]`、字符串包装为单元素数组、数组过滤非字符串并截断超长项，最多保留 5 条。段落模式不再因为模型省略示例而丢弃整段解释；prompt 仍要求无例句时返回空数组。
+
+v0.7.7 调整卡片信息层级：本地标准释义先渲染（AI 未返回时也显示），语境义/整句翻译在后；多词性行使用更窄的 POS 列和间距。这样标准词典结果不再等待模型，卡片也不会出现词性与释义之间的大块空白。

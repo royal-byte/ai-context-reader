@@ -36,7 +36,7 @@ it('shows the local dictionary as the standard definition before the AI responds
   expect(markup).not.toContain('本地词典');
 });
 
-it('renders context first and grouped multi-POS standard senses afterwards', () => {
+it('renders standard senses first and context meaning afterwards', () => {
   state.values = [{ mode: 'word', definition: '纪录', translation: '纪录', explanation: '这里指最佳成绩', examples: [], partOfSpeech: 'n.', sentenceTranslation: '这支队伍创下了新纪录。' }, false, false, '', '', 0, 'new', false, false, {
     word: 'record', phonetic: '/ˈrekərd/', translation: 'n. 纪录, 唱片; v. 记录, 录制', partOfSpeech: 'n. / v.',
     senses: [{ pos: 'n.', definition: '纪录；唱片', phonetic: '/ˈrekərd/' }, { pos: 'v.', definition: '记录；录制', phonetic: '/rɪˈkɔːrd/' }]
@@ -46,7 +46,7 @@ it('renders context first and grouped multi-POS standard senses afterwards', () 
   expect(markup).toContain('标准释义');
   expect(markup).toContain('记录；录制');
   expect(markup).toContain('/rɪˈkɔːrd/');
-  expect(markup.indexOf('语境义')).toBeLessThan(markup.indexOf('标准释义'));
+  expect(markup.indexOf('标准释义')).toBeLessThan(markup.indexOf('语境义'));
 });
 
 it('merges an exactly identical contextual and standard gloss', () => {

@@ -30,8 +30,8 @@
 .acr-pos { color: var(--acr-muted); }
 .acr-source { margin-left: 4px; padding: 1px 5px; border-radius: 999px; background: #e7ece4; color: #667064; font-size: 10px; font-weight: 500; vertical-align: 1px; }
 .acr-sense-list { display: grid; gap: 7px; margin-top: 7px; }
-.acr-sense-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.acr-sense-pos { flex: 0 0 auto; min-width: 42px; color: #596453; font-size: 12px; font-weight: 650; }
+.acr-sense-row { display: flex; align-items: baseline; gap: 5px; min-width: 0; }
+.acr-sense-pos { flex: 0 0 auto; min-width: 20px; color: #596453; font-size: 12px; font-weight: 650; }
 .acr-sense-definition { min-width: 0; color: #343c37; line-height: 1.65; overflow-wrap: anywhere; }
 .acr-sense-phonetic { margin-left: 6px; color: var(--acr-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
 .acr-context-meaning { margin-top: 2px; border-left: 3px solid #315a46; background: #f1f7f2; }
