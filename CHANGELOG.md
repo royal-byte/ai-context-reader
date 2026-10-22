@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.7.9 - 2026-10-22
+
+### Card alignment
+
+- Center the reader close `×` inside its 26×26 button with grid layout and zero padding.
+- Add vertical spacing between the contextual meaning block and the meaning-in-context block so their green backgrounds no longer touch.
+
+### Engineering
+
+- 254 automated tests, typecheck and production build passing.
+
 ## 0.7.8 - 2026-10-22
 
 ### POS spacing and separator cleanup

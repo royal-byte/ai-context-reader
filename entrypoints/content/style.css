@@ -19,7 +19,7 @@
 .acr-title-row .acr-speak { margin-top: 2px; flex-shrink: 0; }
 .acr-speak { margin-top: 7px; border: 0; border-radius: 6px; background: #edf3ee; color: #315a46; padding: 3px 8px; font-size: 13px !important; line-height: 1.4; }
 .acr-speak:hover { background: #dfeae2; }
-.acr-close { flex-shrink: 0; width: 26px; height: 26px; border: 0; border-radius: 6px; background: transparent; color: #858b87; font-size: 21px !important; line-height: 1; }
+.acr-close { flex-shrink: 0; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: #858b87; font-size: 21px !important; line-height: 1; }
 .acr-close:hover { background: #f0f3f1; color: #252a29; }
 .acr-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 18px 2px; scrollbar-width: thin; scrollbar-color: #c5cdc8 transparent; }
 .acr-body h3 { font-size: 13px; font-weight: 650; color: #343c37; line-height: 1.5; }
@@ -34,7 +34,7 @@
 .acr-sense-pos { display: inline; min-width: 0; color: #596453; font-size: 12px; font-weight: 650; }
 .acr-sense-definition { display: inline; min-width: 0; color: #343c37; line-height: 1.65; overflow-wrap: anywhere; }
 .acr-sense-phonetic { margin-left: 6px; color: var(--acr-muted); font-size: 12px; font-weight: 400; white-space: nowrap; }
-.acr-context-meaning { margin-top: 2px; border-left: 3px solid #315a46; background: #f1f7f2; }
+.acr-context-meaning { margin-top: 2px; margin-bottom: 12px; border-left: 3px solid #315a46; background: #f1f7f2; }
 .acr-context-meaning h3 { color: #315a46; }
 .acr-ai { display: inline-block; background: #e4edff; color: #386db8; border-radius: 4px; padding: 0 5px; margin-left: 5px; font: 600 10px/1.65 'Segoe UI', sans-serif; vertical-align: 1px; }
 .acr-translation { padding: 5px 10px 10px; }
