@@ -29,7 +29,10 @@
 .toolbar-actions { display: flex; flex-shrink: 0; gap: 10px; } .toolbar-actions:empty { display: none; } .toolbar-actions button { min-height: 44px; padding: 9px 16px; border: 1px solid #cbd5c6; border-radius: 8px; background: #fff; color: #36543d; font-size: 15px; } .toolbar-actions button:hover { background: #f0f4eb; }
 .workspace-notice { display: flex; justify-content: space-between; gap: 15px; padding: 12px 28px; color: #74472f; background: #fbf0e5; border-bottom: 1px solid #eedfca; font-size: 15px; line-height: 1.7; } .workspace-notice button { border: 0; background: transparent; color: inherit; }
 .workspace-busy { padding: 10px 28px; color: #36543d; background: #eff5ed; font-size: 14px; }
-.reading-viewport { flex: 1; min-height: 0; overflow: auto; background: #eeefe9; position: relative; }
+.reading-viewport { flex: 1; min-height: 0; overflow: auto; background: #eeefe9; position: relative; scrollbar-gutter: stable; }
+.reading-viewport.fit-page { overflow: hidden; }
+.reading-viewport.fit-page .pdf-stage { width: 100%; height: 100%; min-width: 0; min-height: 0; padding: 24px 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.reading-viewport.fit-page .pdf-paper { margin: 0; }
 .reading-empty { min-height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 50px 30px; text-align: center; background: #fafbf8; }
 .empty-book { display: grid; place-items: center; color: #3c6a53; font-size: 43px; width: 88px; height: 100px; border: 1px solid #d8e0d0; border-radius: 5px 15px 15px 5px; box-shadow: -5px 4px 0 #e8ecdf; background: #f4f6ef; margin-bottom: 30px; }
 .empty-eyebrow { font-size: 12px; letter-spacing: 1.5px; color: #667064; margin-bottom: 16px; }

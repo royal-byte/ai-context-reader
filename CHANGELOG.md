@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.4 - 2026-10-22
+
+### PDF fit-page stability
+
+- Stop the PDF page from shaking after choosing “Fit page”.
+- Reserve a stable scrollbar gutter on the reading viewport.
+- In fit-page mode, hide viewport scrollbars and let the page fit inside a fixed flex stage, removing the scrollbar → resize → rescale feedback loop.
+
+### Engineering
+
+- 250 automated tests, typecheck and production build passing.
+
 ## 0.7.3 - 2026-10-22
 
 ### Local standard definitions

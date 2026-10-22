@@ -142,3 +142,5 @@ PDF 侧新增键盘翻页（不拦截可编辑控件和卡片打开状态）、`
 v0.7.2 进一步把 `definition` 的语言钉死为简体中文：Prompt 禁止英文词典释义，缓存版本升到 v3；后台 `ensureChineseDefinition` 在单词定义仍为英文时用本地 ECDICT 子集补齐中文标准义/词性/音标，在短语/句子/段落仍为英文时用中文语境翻译兜底，避免 UI 出现纯英文“标准释义”。
 
 v0.7.3 把单词的“标准释义”所有权从模型移回本地词典：`ReaderCard` 先请求 `dictionary-lookup`，单词模式用 `local.translation`（去掉首词性前缀）和 `local.partOfSpeech` 渲染标准义，AI 的 `definition` 只作为本地缺词时的 fallback；语境义仍取 AI `translation`。标准义在 AI 加载期间就显示，保存收藏时也写入本地标准义/词性/音标，避免生词库保存模型的语境义。
+
+v0.7.4 修复 PDF “适合页面”抖动：`.reading-viewport` 使用 `scrollbar-gutter: stable`，fit-page 模式隐藏滚动条，`.pdf-stage` 固定为 100% 尺寸并用 flex 居中，页面高度按 viewport 高度减 padding 计算。这样 PDF 尺寸变化不会再触发滚动条出现/消失，从而打断 ResizeObserver → 缩放 → 布局的反馈环。
