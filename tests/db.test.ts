@@ -1,5 +1,7 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readerDb, saveItem, getFavoriteState, getFavoriteNote, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, getFavoriteNote, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm, restoreReview } from '../src/db';
+import { favoriteKey } from '../src/library';
+import type { ReviewSnapshot } from '../src/srs';
 import type { ReaderItem } from '../src/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -32,6 +34,18 @@ it('updates and reads a note on an existing context', async () => {
 it('reads a note attached to an existing context', async () => {
   mockItems([{ ...existing, note: 'My example: This could undermine trust.' }]);
   expect(await getFavoriteNote(existing)).toBe('My example: This could undermine trust.');
+});
+
+it('restores a prior review snapshot and clears first-review fields', async () => {
+  const reviewed = { ...existing, dueAt: 99, intervalDays: 10, ease: 2.7, reviewCount: 3, lapseCount: 1, lastReviewedAt: 50, status: 'mastered' as const };
+  mockItems([reviewed]);
+  const put = vi.spyOn(readerDb.items, 'put').mockResolvedValue(7);
+  const firstReview: ReviewSnapshot = { reviewCount: undefined, dueAt: undefined, intervalDays: undefined, ease: undefined, lapseCount: undefined, lastReviewedAt: undefined, status: undefined };
+  await restoreReview(favoriteKey(reviewed), firstReview);
+  const restored = put.mock.calls[0]![0] as Record<string, unknown>;
+  expect(restored).not.toHaveProperty('dueAt');
+  expect(restored).not.toHaveProperty('reviewCount');
+  expect(restored).not.toHaveProperty('status');
 });
 
 it.each([

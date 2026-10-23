@@ -42,3 +42,14 @@ it('builds due and new queues without including future cards', () => {
   expect(dueReviewQueue([fresh], now, 20).due).toHaveLength(1);
   expect(dueReviewQueue(Array.from({ length: 25 }, (_, index) => word({ selectedText: `word${index}`, lemma: `word${index}`, id: index + 10 })), now, 20).due).toHaveLength(20);
 });
+
+it('caps due and new cards independently', () => {
+  const due = Array.from({ length: 5 }, (_, index) => word({ selectedText: `due${index}`, lemma: `due${index}`, id: index + 1, dueAt: now - 1, reviewCount: 1 }));
+  const fresh = Array.from({ length: 25 }, (_, index) => word({ selectedText: `fresh${index}`, lemma: `fresh${index}`, id: index + 50, createdAt: index + 1 }));
+  const queue = dueReviewQueue([...due, ...fresh], now, 3, 2);
+  expect(queue.due).toHaveLength(5);
+  expect(queue.dueCount).toBe(2);
+  expect(queue.dueTotal).toBe(5);
+  expect(queue.newCount).toBe(3);
+  expect(queue.freshTotal).toBe(25);
+});

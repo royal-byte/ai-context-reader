@@ -70,6 +70,11 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
         <label>{t('解释选区快捷键', 'Explain selection shortcut')}<select value={preferences.shortcut} onChange={(event) => setPreferences({ ...preferences, shortcut: event.target.value as typeof preferences.shortcut })}><option value="off">{t('关闭', 'Off')}</option><option value="alt-shift-e">Alt + Shift + E</option><option value="alt-shift-x">Alt + Shift + X</option></select></label></div>
         <p className="hint">{t('快捷键只在阅读网页或 PDF 时生效，不接管 Ctrl+C。单次最多 3000 字符，超过 1500 字符会提醒分段。', 'Shortcuts work in reading pages and PDFs, never override Ctrl+C. Maximum 3000 characters; selections over 1500 show a reminder.')}</p>
       </section>
+      <section className="settings-group"><h3>{t('复习', 'Review')}</h3>
+        <div className="settings-columns"><label>{t('每日新词上限', 'New words per day')}<input type="number" min={0} max={200} value={preferences.reviewNewPerDay} onChange={(event) => setPreferences({ ...preferences, reviewNewPerDay: Math.max(0, Math.min(200, Number(event.target.value) || 0)) })} /></label>
+        <label>{t('每日到期上限', 'Due cards per day')}<input type="number" min={0} max={1000} value={preferences.reviewDuePerDay} onChange={(event) => setPreferences({ ...preferences, reviewDuePerDay: Math.max(0, Math.min(1000, Number(event.target.value) || 0)) })} /></label></div>
+        <p className="hint">{t('复习队列按到期时间排序，超过上限的卡会留到下一次；新词默认每天 20 个，到期默认每天 100 个。设为 0 可暂停对应队列。', 'The review queue is ordered by due time; cards over the limit stay for next time. Defaults: 20 new and 100 due cards per day. Set 0 to pause that queue.')}</p>
+      </section>
       <details className="settings-group" open><summary>{t('AI 模型与接口', 'AI model and API')}</summary>
         <label>{t('服务商', 'Provider')}<select value={provider} onChange={switchProvider}>{(Object.keys(API_PRESETS) as ApiProvider[]).map((id) => <option key={id} value={id}>{id === 'custom' ? t('自定义兼容接口', 'Custom compatible API') : id === 'minimax' ? t('MiniMax（国内）', 'MiniMax (China)') : id === 'minimaxIntl' ? t('MiniMax（国际）', 'MiniMax (International)') : API_PRESETS[id].label}</option>)}</select></label>
         <label>{t('API 地址', 'API endpoint')}<input value={settings.endpoint} onChange={change('endpoint')} readOnly={provider !== 'custom'} placeholder="https://example.com/v1" /></label>

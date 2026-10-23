@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.8.0 - 2026-10-23
+
+### Review session v2
+
+- Add daily limits for new cards and due cards, configurable in settings (defaults: 20 new, 100 due).
+- Show session progress, completed count, remaining cards, and hidden backlog.
+- Keyboard flow: Space reveals, 1–4 rates, U undoes; the footer documents shortcuts.
+- “Again” cards return to the end of the current session, while still being scheduled for 10 minutes later.
+- Undo restores the previous schedule from a snapshot, including first-review fields.
+- Add a session summary with rating counts, another-round action, and undo.
+- Rewrite rating labels: 没想起来 / 很费劲 / 想起来了 / 太容易, with growth hints.
+- Explain why Hard and Good both start at one day on the first review.
+- Make review a meaning-recall task: the word stays visible and is highlighted in the source sentence; the blank-filling contradiction is removed.
+- Cloze falls back to the full sentence when the term appears inflected or cannot be matched.
+- Preload the local dictionary when a content page mounts so the first lookup does not appear to wait for the AI request.
+- Split answer content into contextual meaning and standard definition.
+
+### Engineering
+
+- 263 automated tests, typecheck and production build passing.
+
 ## 0.7.10 - 2026-10-23
 
 ### Notes and article vocabulary

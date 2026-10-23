@@ -11,6 +11,19 @@ export type ReviewSchedule = {
   lastReviewedAt: number;
   status: LearningStatus;
 };
+export type ReviewSnapshot = Pick<ReaderItem, 'dueAt' | 'intervalDays' | 'ease' | 'reviewCount' | 'lapseCount' | 'lastReviewedAt' | 'status'>;
+
+export function reviewSnapshot(item: ReaderItem): ReviewSnapshot {
+  return {
+    dueAt: item.dueAt,
+    intervalDays: item.intervalDays,
+    ease: item.ease,
+    reviewCount: item.reviewCount,
+    lapseCount: item.lapseCount,
+    lastReviewedAt: item.lastReviewedAt,
+    status: item.status
+  };
+}
 
 export const DAY_MS = 86_400_000;
 const MIN_EASE = 1.3;
@@ -75,7 +88,7 @@ export function formatInterval(days: number, language: 'zh-CN' | 'en' = 'zh-CN')
   return language === 'en' ? `${years} yr` : `${years} 年`;
 }
 
-export function dueReviewQueue(items: ReaderItem[], now = Date.now(), newLimit = 20) {
+export function dueReviewQueue(items: ReaderItem[], now = Date.now(), newLimit = 20, dueLimit = 100) {
   const groups = groupFavorites(items.filter((item) => collectionKind(item) === 'vocabulary'));
   const due: ReaderItem[] = [];
   const fresh: ReaderItem[] = [];
@@ -85,10 +98,13 @@ export function dueReviewQueue(items: ReaderItem[], now = Date.now(), newLimit =
   }
   due.sort((a, b) => (a.dueAt ?? 0) - (b.dueAt ?? 0));
   fresh.sort((a, b) => a.createdAt - b.createdAt);
+  const shownDue = due.slice(0, Math.max(0, dueLimit));
+  const shownFresh = fresh.slice(0, Math.max(0, newLimit));
   return {
-    due: [...due, ...fresh.slice(0, newLimit)],
-    dueCount: due.length,
-    newCount: Math.min(fresh.length, newLimit),
+    due: [...shownDue, ...shownFresh],
+    dueCount: shownDue.length,
+    dueTotal: due.length,
+    newCount: shownFresh.length,
     freshTotal: fresh.length
   };
 }

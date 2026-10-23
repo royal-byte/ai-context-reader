@@ -113,6 +113,7 @@ function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => vo
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { preferences, ready } = useReaderPreferences();
   const t = uiText(preferences.uiLanguage);
+  useEffect(() => { void chrome.runtime.sendMessage({ type: 'dictionary-preload' }).catch(() => { /* Optional dictionary. */ }); }, []);
   const track = (value: Selection) => {
     const text = value.text.trim();
     if (!text) return;

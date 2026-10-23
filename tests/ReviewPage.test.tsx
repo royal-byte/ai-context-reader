@@ -14,12 +14,21 @@ const word: ReaderItem = {
 
 const props = { dueCount: 1, newCount: 0, language: 'zh-CN' as const, t, onRate: vi.fn(async () => {}), onOpen: vi.fn(), onGoLibrary: vi.fn() };
 
-it('shows a cloze card and hides ratings until the answer is revealed', () => {
+it('shows the word in context and hides the meaning until reveal', () => {
   const markup = renderToStaticMarkup(<ReviewPage {...props} due={[word]} />);
   expect(markup).toContain('resilient');
-  expect(markup).toContain('_____');
+  expect(markup).toContain('<mark>resilient</mark>');
+  expect(markup).toContain('这个词在这里是什么意思？');
   expect(markup).toContain('显示答案');
+  expect(markup).not.toContain('_____');
   expect(markup).not.toContain('忘记了');
+});
+
+it('falls back to the full sentence when the term has an inflected form', () => {
+  const markup = renderToStaticMarkup(<ReviewPage {...props} due={[{ ...word, sourceSentence: 'Rising costs undermined profitability.', selectedText: 'undermine', lemma: 'undermine' }]} />);
+  expect(markup).toContain('Rising costs undermined profitability.');
+  expect(markup).not.toContain('_____');
+  expect(markup).toContain('注意这个词在句中的意思');
 });
 
 it('shows a clear empty state when nothing is due', () => {

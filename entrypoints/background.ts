@@ -100,6 +100,11 @@ export default defineBackground(() => {
           sendResponse({ ok: true });
           return;
         }
+        if (message.type === 'dictionary-preload') {
+          if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
+          sendResponse({ ok: true, ready: Boolean(await lookupWord('a').catch(() => undefined)) });
+          return;
+        }
         if (message.type === 'dictionary-lookup') {
           if (!fromReader(sender)) throw new Error('未授权的消息来源。 / Untrusted sender.');
           const word = typeof message.word === 'string' ? message.word.slice(0, 100) : '';

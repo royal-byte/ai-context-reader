@@ -156,3 +156,5 @@ v0.7.8 把多词性行从 flex 列改为行内文本 `n. 释义`，只保留一�
 v0.7.9 修正卡片细节：关闭按钮用 `display: grid; place-items: center; padding: 0` 让 `×` 居中；语境义块增加 `margin-bottom: 12px`，与上下文释义块分开。
 
 v0.7.10 给 `ReaderItem` 增加可选 `note`，收藏时随记录保存，重复保存时更新同一条语境；`favorite-state` 同时返回已有笔记，卡片失焦自动保存。网页内容脚本维护当前页面的 `ArticleLookup` 会话列表，只索引单词/短语；`ArticleVocabulary` 抽屉在本地展开释义、原句和笔记编辑器，不改变宿主页面布局。PDF/EPUB 继续使用侧栏，不启用该抽屉。
+
+v0.8.0 把复习从“全局队列”改成页面内会话：`dueReviewQueue` 增加 new/due 双限额，`ReviewPage` 持有会话队列、进度、评分统计和一层撤销快照；`restoreReview` 按词条恢复复习字段。`again` 既写入 10 分钟后的调度，也回到本次队列末尾；键盘、Cloze 兜底和会话总结都在同一组件内完成。偏好设置新增 `reviewNewPerDay` / `reviewDuePerDay`，不需要数据库迁移。

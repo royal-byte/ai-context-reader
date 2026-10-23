@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type MouseEvent } from 'react';
 import { getDocument, GlobalWorkerOptions, type PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
-import { readerDb, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm } from './db';
+import { readerDb, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm, restoreReview } from './db';
 import { MAX_BACKUP_BYTES, MAX_BACKUP_RECORDS, parseBackup, planRestore } from './backup';
 import { rememberDocument } from './documents';
 import { clampPage, collectionKind, contextKey, favoriteKey, formatPartOfSpeech, groupFavorites, relatedVocabulary } from './library';
@@ -20,7 +20,7 @@ import { contextForRange, contextPacketForRange, windowContext } from './selecti
 import { contextPacketForText } from './context';
 import { toAnkiTsv, toCsv } from './export';
 import { isLikelyEnglish } from './language';
-import { dueReviewQueue, type ReviewRating } from './srs';
+import { dueReviewQueue, type ReviewRating, type ReviewSnapshot } from './srs';
 
 // Settings are rarely used; load the form on demand instead of the PDF first paint.
 const SettingsForm = lazy(() => import('./SettingsForm').then((module) => ({ default: module.SettingsForm })));
@@ -61,6 +61,7 @@ export function Workbench() {
   const [pendingRestore, setPendingRestore] = useState<{ name: string; items: ReaderItem[] }>();
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [sort, setSort] = useState<'recent' | 'alpha' | 'status'>('recent');
+  const [reviewSession, setReviewSession] = useState(0);
   const t = uiText(preferences.uiLanguage);
   const statusLabels: Record<LearningStatus, string> = { new: t('新词', 'New'), reviewing: t('复习', 'Review'), mastered: t('已掌握', 'Mastered') };
   const input = useRef<HTMLInputElement>(null);
@@ -280,9 +281,22 @@ export function Workbench() {
   };
   const rateReview = async (item: ReaderItem, rating: ReviewRating) => {
     try {
-      await reviewTerm(favoriteKey(item), rating);
+      const schedule = await reviewTerm(favoriteKey(item), rating);
       await refreshLibrary();
-    } catch { setNotice(t('复习进度保存失败，请重试。', 'Could not save review progress. Please retry.')); }
+      return schedule;
+    } catch (error) {
+      setNotice(t('复习进度保存失败，请重试。', 'Could not save review progress. Please retry.'));
+      throw error;
+    }
+  };
+  const undoReview = async (item: ReaderItem, snapshot: ReviewSnapshot) => {
+    try {
+      await restoreReview(favoriteKey(item), snapshot);
+      await refreshLibrary();
+    } catch (error) {
+      setNotice(t('撤销失败，请重试。', 'Could not undo. Please retry.'));
+      throw error;
+    }
   };
   const returnToSource = async (item: ReaderItem) => {
     if (item.documentId === document?.id && (pdf || epub)) {
@@ -339,7 +353,7 @@ export function Workbench() {
     } catch { setNotice(t('删除失败，请重试。', 'Could not delete. Please retry.')); }
   };
   const scopedRecords = useMemo(() => items.filter((item) => view === 'library' || scope === 'all' || !document || item.documentId === document.id), [items, view, scope, document]);
-  const reviewData = useMemo(() => dueReviewQueue(items), [items]);
+  const reviewData = useMemo(() => dueReviewQueue(items, Date.now(), preferences.reviewNewPerDay, preferences.reviewDuePerDay), [items, preferences.reviewNewPerDay, preferences.reviewDuePerDay]);
   const scopedItems = useMemo(() => groupFavorites(scopedRecords), [scopedRecords]);
   const relatedItem = useMemo(() => scopedItems.find((item) => favoriteKey(item) === relatedFor), [scopedItems, relatedFor]);
   const related = useMemo(() => relatedItem ? relatedVocabulary(relatedItem, scopedRecords) : [], [relatedItem, scopedRecords]);
@@ -460,7 +474,7 @@ export function Workbench() {
           {pdf && document ? <PdfPage pdf={pdf} pageNumber={page} width={width} height={height} zoom={zoom} onSelect={capture} onError={setNotice} language={preferences.uiLanguage} /> : chapter && document ? <EpubPage chapter={chapter} fontSize={epubFont} onSelect={capture} /> : <div className="reading-empty"><span className="empty-book" aria-hidden="true">▤</span><p className="empty-eyebrow">READ. UNDERSTAND. REMEMBER.</p><h2>{t('把阅读，变成理解。', 'Read for understanding.')}</h2><p>{t('打开一份 PDF 或 EPUB，选中不懂的词。释义联系上下文，值得记住的内容留在身边。', 'Open a PDF or EPUB and select unfamiliar words. Understand them in context and save what matters.')}</p><button className="primary-button" onClick={() => input.current?.click()} disabled={busy}>{t('选择本地文档', 'Choose local document')}</button><span className="drop-hint">{t('也可以把文件拖到这里 · 支持 PDF 与 EPUB', 'Or drop a file here · PDF and EPUB supported')}</span><div className="onboarding-steps"><p>{t('第一次使用？三步开始', 'First time? Three steps')}</p><ol><li>{t('配置 AI 服务商与密钥', 'Connect an AI provider')}</li><li>{t('打开 PDF/EPUB，或在任意网页选中文字', 'Open a PDF/EPUB, or select text on any page')}</li><li>{t('保存生词或摘录，随时回看', 'Save words or excerpts to revisit')}</li></ol><button className="onboarding-cta" onClick={() => setSettingsOpen(true)}>{t('配置 AI 模型', 'Configure AI')}</button></div>{history[0] && <button className="continue-button" onClick={() => { void reopen(history[0]!); }}>{t('继续阅读：', 'Continue: ')}{history[0].name} · {history[0].kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {history[0].currentPage} →</button>}</div>}
         </div>
       </>}
-      {view === 'review' && <ReviewPage due={reviewData.due} dueCount={reviewData.dueCount} newCount={reviewData.newCount} language={preferences.uiLanguage} t={t} onRate={rateReview} onOpen={openSource} onGoLibrary={() => go('library')} />}
+      {view === 'review' && <ReviewPage key={reviewSession} due={reviewData.due} dueCount={reviewData.dueCount} dueTotal={reviewData.dueTotal} newCount={reviewData.newCount} newTotal={reviewData.freshTotal} language={preferences.uiLanguage} t={t} onRate={rateReview} onUndo={undoReview} onOpen={openSource} onGoLibrary={() => go('library')} onRestart={() => setReviewSession((value) => value + 1)} />}
       {view === 'library' && <section className="library-page">{pendingRestore && restorePlan && <section className="restore-preview" ref={restorePreview} tabIndex={-1} aria-labelledby="restore-heading" onKeyDown={(event) => { if (event.key === 'Escape' && !restoreBusy) cancelRestore(); }}><h2 id="restore-heading">{t('恢复备份预览', 'Restore preview')}</h2><p className="restore-filename">{pendingRestore.name}</p><p>{t(`备份包含 ${pendingRestore.items.length} 条语境，预计新增 ${restorePlan.additions.length} 条、跳过 ${restorePlan.skipped} 条重复内容。`, `The backup contains ${pendingRestore.items.length} contexts: ${restorePlan.additions.length} expected additions, ${restorePlan.skipped} duplicates.`)}</p><p>{t('只合并新增语境，不覆盖已有收藏和学习状态。不恢复 API Key、阅读设置或原 PDF 文件；本机缺少的 PDF 需要重新打开。', 'Adds new contexts without replacing favorites or learning states. API keys, settings and PDF files are not restored. Reopen missing PDFs locally.')}</p><div className="restore-actions"><button className="primary-button" disabled={restoreBusy} onClick={() => { void confirmRestore(); }}>{restoreBusy ? t('正在恢复…', 'Restoring…') : t('确认恢复', 'Confirm restore')}</button><button disabled={restoreBusy} onClick={cancelRestore}>{t('取消，不恢复', 'Cancel restore')}</button></div></section>}{collection}</section>}
       {view === 'history' && <section className="history-page"><p className="page-intro">{t('你的文件和历史只留在这台设备上。关闭历史不会删除已有记录或收藏。', 'Files and history stay on this device. Turning history off does not delete existing records or favorites.')}</p><h2>{t('本地文档', 'Local documents')}</h2><p className="page-intro">{preferences.saveReadingProgress ? t('正在保存阅读进度。', 'Reading progress is enabled.') : t('阅读进度保存已关闭；新打开文件只在当前页面保留。', 'Progress saving is off. Newly opened files stay in this tab only.')}</p>{history.length ? history.map((entry) => <div className="history-row" key={entry.id}><button className="history-item" onClick={() => { void reopen(entry); }}><span className="history-icon" aria-hidden="true">▤</span><div><h2>{entry.name}</h2><p>{entry.kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {entry.currentPage} / {entry.pageCount} · {new Date(entry.lastOpenedAt).toLocaleDateString(preferences.uiLanguage)}</p></div><span>{t('继续阅读 →', 'Continue reading →')}</span></button><button className="history-delete" onClick={() => { void removeDocument(entry); }}>{t('删除', 'Delete')}</button></div>) : <div className="history-empty">{t('还没有已保存的文档阅读记录。', 'No saved document history yet.')}</div>}<div className="section-heading"><h2>{t('查询历史', 'Query history')}</h2>{queries.length > 0 && <button className="quiet-danger" onClick={() => { void removeQueryHistory(); }}>{t('清空查询历史', 'Clear history')}</button>}</div><p className="page-intro">{preferences.saveQueryHistory ? t('仅记录成功查询，最多保留最近 200 条。', 'Only successful queries are saved, up to 200 recent entries.') : t('查询历史保存已关闭。主动收藏不受影响。', 'Query history is off. Favorites are unaffected.')}</p>{queries.length ? queries.map((entry) => <article className="history-item" key={entry.id}><div><h2>{entry.text}</h2><p>{entry.sourceTitle}{entry.pageNumber ? ` · ${t('页码', 'Page')} ${entry.pageNumber}` : ''} · {new Date(entry.createdAt).toLocaleString(preferences.uiLanguage)}</p><p>{entry.sourceUrl}</p></div></article>) : <div className="history-empty">{t('没有查询历史。', 'No query history.')}</div>}</section>}
       </div>

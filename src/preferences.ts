@@ -9,6 +9,8 @@ export type ReaderPreferences = {
   shortcut: 'off' | 'alt-shift-e' | 'alt-shift-x';
   saveQueryHistory: boolean;
   saveReadingProgress: boolean;
+  reviewNewPerDay: number;
+  reviewDuePerDay: number;
   siteMode: 'all' | 'allowlist';
   allowedSites: string[];
   blockedSites: string[];
@@ -17,6 +19,7 @@ export const PREFERENCES_KEY = 'reader-preferences';
 export const DEFAULT_PREFERENCES: ReaderPreferences = {
   uiLanguage: 'zh-CN', explanationLanguage: 'zh-CN', trigger: 'quick', englishOnly: true, popupSize: 'medium',
   shortcut: 'off', saveQueryHistory: false, saveReadingProgress: true,
+  reviewNewPerDay: 20, reviewDuePerDay: 100,
   siteMode: 'all', allowedSites: [], blockedSites: []
 };
 export const uiText = (language: ReaderPreferences['uiLanguage']) => (zh: string, en: string) => language === 'en' ? en : zh;
@@ -56,6 +59,10 @@ export function normalizePreferences(value: unknown): ReaderPreferences {
     if (typeof input[key] === 'string' && choices[key].includes(input[key] as string)) Object.assign(result, { [key]: input[key] });
   }
   for (const key of ['saveQueryHistory', 'saveReadingProgress', 'englishOnly'] as const) if (typeof input[key] === 'boolean') result[key] = input[key];
+  for (const [key, max] of [['reviewNewPerDay', 200], ['reviewDuePerDay', 1000]] as const) {
+    const value = input[key];
+    if (typeof value === 'number' && Number.isFinite(value)) result[key] = Math.max(0, Math.min(max, Math.round(value)));
+  }
   result.allowedSites = safeSiteList(input.allowedSites);
   result.blockedSites = safeSiteList(input.blockedSites);
   return result;

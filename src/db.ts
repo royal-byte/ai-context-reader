@@ -2,7 +2,7 @@ import Dexie, { type EntityTable } from 'dexie';
 import type { DocumentFile, ExplanationCache, ReaderItem, ReadingDocument, QueryHistory } from './types';
 import { collectionKind, contextKey, favoriteKey, formatPartOfSpeech, type FavoriteInput } from './library';
 import { planRestore } from './backup';
-import { scheduleReview, type ReviewRating } from './srs';
+import { scheduleReview, type ReviewRating, type ReviewSnapshot } from './srs';
 
 export const readerDb = new Dexie('ai-context-reader') as Dexie & {
   items: EntityTable<ReaderItem, 'id'>;
@@ -111,6 +111,20 @@ export async function reviewTerm(termKey: string, rating: ReviewRating, now = Da
       if (record.id !== undefined) await readerDb.items.update(record.id, schedule);
     }
     return schedule;
+  });
+}
+
+export async function restoreReview(termKey: string, snapshot: ReviewSnapshot) {
+  return readerDb.transaction('rw', readerDb.items, async () => {
+    const records = await readerDb.items.where('termKey').equals(termKey).toArray();
+    if (!records.length) throw new Error('词条不存在。 / Term not found.');
+    for (const record of records) {
+      const restored = { ...record };
+      delete restored.dueAt; delete restored.intervalDays; delete restored.ease;
+      delete restored.reviewCount; delete restored.lapseCount; delete restored.lastReviewedAt; delete restored.status;
+      for (const [key, value] of Object.entries(snapshot)) if (value !== undefined) (restored as Record<string, unknown>)[key] = value;
+      await readerDb.items.put(restored);
+    }
   });
 }
 
