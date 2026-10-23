@@ -6,6 +6,8 @@
 
 **An open-source, local-first context reader for English reading in Chrome and Edge.**
 
+[English](README.md) · [简体中文](README.zh-CN.md)
+
 Select a word, phrase, sentence, or paragraph on a web page, PDF, or EPUB. AI Context Reader explains what it means **in that context**, keeps the standard dictionary definition separate, and lets you save, annotate, and review what you read.
 
 No account, no backend, no telemetry. Bring your own API key, or use the offline demo mode to try the interface.
