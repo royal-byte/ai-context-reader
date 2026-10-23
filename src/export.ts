@@ -1,5 +1,6 @@
 import type { ReaderItem } from './types';
 import { collectionKind } from './library';
+import { stripDefinitionPos } from './dictionary';
 
 const CSV_COLUMNS = [
   'term',
@@ -38,7 +39,7 @@ export function toCsv(records: ReaderItem[]) {
       item.lemma,
       item.phonetic,
       item.partOfSpeech,
-      item.definition,
+      stripDefinitionPos(item.definition),
       item.translation,
       item.explanation,
       item.context,
@@ -95,7 +96,7 @@ export function toAnkiTsv(records: ReaderItem[]) {
     .map((item) => {
       const front = ankiField(item.lemma || item.selectedText);
       const back = [
-        item.definition,
+        stripDefinitionPos(item.definition),
         item.translation,
         item.explanation,
         item.sourceSentence || item.context,

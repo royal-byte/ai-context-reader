@@ -9,6 +9,16 @@ it('normalizes punctuation and offers conservative inflection fallbacks', () => 
   expect(dictionaryCandidates('making')).toContain('make');
   expect(dictionaryCandidates('')).toEqual([]);
   expect(stripDictionaryPos('n. 马具, 挽具; vt. 利用')).toBe('马具, 挽具; vt. 利用');
+  expect(stripDictionaryPos('adj. adj. 无正式文件的')).toBe('无正式文件的');
+});
+
+it('cleans repeated POS prefixes inside legacy definitions', () => {
+  expect(parseDictionarySenses('n. / adj. / vi. n. 载货单, 运货单, 旅客名单', 'n. / adj. / vi.')).toEqual([
+    { pos: 'n.', definition: '载货单, 运货单, 旅客名单' }
+  ]);
+  expect(parseDictionarySenses('adj. adj. 无正式文件的, 无事实证明的', 'adj.')).toEqual([
+    { pos: 'adj.', definition: '无正式文件的, 无事实证明的' }
+  ]);
 });
 
 it('groups dictionary translation lines by part of speech and keeps heteronym phonetics', () => {

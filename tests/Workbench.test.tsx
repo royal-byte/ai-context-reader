@@ -28,6 +28,13 @@ it.each(['reading', 'library', 'history'] as const)('only offers document openin
   if (view === 'reading') expect(markup).toContain('配置 AI 模型');
 });
 
+it('strips legacy duplicate POS prefixes in saved definitions', () => {
+  const legacy = { ...word, partOfSpeech: 'n. / adj. / vi.', definition: 'n. / adj. / vi. n. 载货单, 运货单' };
+  const markup = render('library', [legacy]);
+  expect(markup).toContain('n. / adj. / vi. 载货单');
+  expect(markup).not.toContain('vi. n. 载货单');
+});
+
 it('offers reading instead of an empty export action when the library is empty', () => {
   const markup = render('library');
   expect(markup).toContain('去阅读');

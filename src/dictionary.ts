@@ -64,7 +64,7 @@ export function parseDictionarySenses(translation: string, partOfSpeech?: string
     let definition = chunk;
     if (match) {
       pos = normalizePos(match[1]!);
-      definition = chunk.slice(match[0].length).trim();
+      definition = stripDictionaryPos(definition);
       currentPos = pos;
     } else if (/^\[[^\]]+\]/.test(chunk)) {
       // Domain labels such as [计], [医], [网络] are usually noun glosses.
@@ -84,9 +84,20 @@ export function normalizeDictionaryWord(value: string) {
   return value.toLowerCase().replace(/[^a-z'-]/g, '').replace(/^'+|'+$/g, '');
 }
 
-/** Remove the first dictionary POS prefix when the UI already renders one. */
+/** Remove leading dictionary POS prefixes when the UI already renders one. */
 export function stripDictionaryPos(value: string) {
-  return value.replace(/^(?:n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj|a|ad)\.\s*/i, '');
+  let result = value.trim();
+  let previous = '';
+  while (result && result !== previous) {
+    previous = result;
+    result = result.replace(POS_PREFIX, '').replace(/^[/,，;；|]\s*/, '').trim();
+  }
+  return result;
+}
+
+/** Strip POS labels from each gloss, including legacy multi-sense saved strings. */
+export function stripDefinitionPos(value: string) {
+  return value.split(/[;；]/).map((part) => stripDictionaryPos(part.trim())).filter(Boolean).join('；');
 }
 
 /** Compare exact dictionary glosses for safe de-duplication; not a semantic merge. */
