@@ -1,6 +1,16 @@
 {
   "name": "ai-context-reader",
   "version": "0.8.0",
+  "description": "Open-source, local-first context reader for English reading in Chrome and Edge.",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/royal-byte/ai-context-reader.git"
+  },
+  "homepage": "https://github.com/royal-byte/ai-context-reader#readme",
+  "bugs": {
+    "url": "https://github.com/royal-byte/ai-context-reader/issues"
+  },
   "private": true,
   "type": "module",
   "engines": {

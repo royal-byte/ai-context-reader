@@ -1,235 +1,262 @@
-# AI Context Reader MVP
+# AI Context Reader
 
-一个本地优先的 Chrome / Edge 阅读插件：在网页、本地 PDF 或 EPUB 中双击/拖选文字，取得上下文解释并收藏。当前版本：0.8.0，默认只对英文选区触发，并支持间隔复习、离线词典与 Context Packet v2。
+[![CI](https://github.com/royal-byte/ai-context-reader/actions/workflows/ci.yml/badge.svg)](https://github.com/royal-byte/ai-context-reader/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Manifest V3](https://img.shields.io/badge/manifest-v3-315a46.svg)](https://developer.chrome.com/docs/extensions/develop/migrate)
 
-[隐私说明](PRIVACY.md) · [变更记录](CHANGELOG.md) · [安全说明](SECURITY.md) · [MIT License](LICENSE)
+**An open-source, local-first context reader for English reading in Chrome and Edge.**
 
-## 运行（第一次）
+Select a word, phrase, sentence, or paragraph on a web page, PDF, or EPUB. AI Context Reader explains what it means **in that context**, keeps the standard dictionary definition separate, and lets you save, annotate, and review what you read.
 
-1. 安装 [Node.js LTS](https://nodejs.org/)，打开此项目文件夹的终端。
-2. 运行 `npm install`，再运行 `npm run build`。
-3. 在 Edge 打开 `edge://extensions`（Chrome 则是 `chrome://extensions`），开启“开发者模式”。
-4. 点击“加载已解压的扩展程序”，选择本项目的 `.output/chrome-mv3` 文件夹。
+No account, no backend, no telemetry. Bring your own API key, or use the offline demo mode to try the interface.
 
-## CI
+> 中文简介：本地优先的开源英文阅读助手。在网页、PDF 或 EPUB 中划词，结合上下文解释词义；标准释义优先来自本地词典，另可做笔记、收藏和间隔复习。无需注册，密钥只保存在本机。
 
-`.github/workflows/ci.yml` 在每次 push 和 pull request 时执行 typecheck、测试、构建和 zip 打包；构建产物可从 Actions 页的 `extension-zip` artifact 下载。
+[Features](#features) · [Install](#install) · [Privacy](#privacy) · [Architecture](ARCHITECTURE.md) · [Contributing](CONTRIBUTING.md) · [License](#license)
 
-## 使用
+---
 
-- 网页：双击单词直接解释；拖选文字（包括单词、短语、句子、段落）只显示小巧的“解释”按钮，点击后才打开卡片并请求模型。只是复制时，照常按 Ctrl+C 或右键复制，不调用模型。按钮不抢焦点或清除选区；点击其他地方、按 Escape 或滚动页面可关闭按钮。浅色弹窗只展示释义、上下文解释及中文翻译，不重复英文原句，也不显示分类标签或切换栏。点击卡片外部即可关闭。
-- 默认只对英文选区触发：中文、日文、韩文等非英文选区不会显示“解释”按钮，也不会请求模型，避免浪费 token。可在设置 → 阅读中关闭“只对英文选区触发”，改为解释其他语言。
-- 未配置 API 时会明确标记演示内容；`The strategy could undermine profitability.` 可展示完整示例，其他选区显示占位说明，不冒充真实词典结果。
-- 设置：点击工作台左侧“设置”，直接在工作台内选择 GLM（智谱）、DeepSeek、OpenAI、OpenRouter、MiniMax（国内/国际）或自定义兼容接口，不再另开页面。填写该服务商的密钥 → “测试连接” → “保存并返回”，成功后回到进入设置前的页面，并保留 PDF 页码、缩放、滚动位置和收藏筛选。“返回，不保存”放弃本次修改；保存失败时留在设置中重试。测试不会覆盖已有配置。密钥只保存在本机扩展存储中，永不导出；切换服务商会清空输入框中的旧密钥。
-- 工作台：点击扩展图标会打开完整阅读页面；已打开时切回原标签，不重复打开。左侧为阅读、我的收藏、阅读历史和设置；中间读 PDF/EPUB，右侧收藏栏可收起。
-- 收藏：单词和短语点击“保存到生词库”，完整句子和段落点击“保存为摘录”，不是简单按字符长短切分。按钮下方说明支持的内容；成功后明确提示保存位置。模型可以在同一次解释中纠正初步判断。生词状态仍由你手动管理，暂非自动复习算法。
-- 收藏界面：生词采用紧凑卡片，默认显示词条、音标、词性释义和状态；点击卡片正文原位展开上下文、原句、来源和页码，不再弹出详情窗口。同一时间只展开一张，再点正文或“收起”关闭。阅读侧栏遵循同一规则。摘录仍保留原文和译文。
-- 卡片“…”可修改新词、复习、已掌握；不会触发卡片展开。状态筛选带数量，按当前文档/全部收藏范围统计。只有主动点击展开区的“回到原文”才跳转来源。
-- 导出位于收藏页右上方，无收藏时不显示；搜索无结果时可清除筛选。打开文档只出现在阅读页，空收藏可点击“去阅读”。工作台使用统一字号与文字对比度，窄屏自动换行。
-- 音标：单词标题下方显示美式 IPA，由当前 API 模型返回，与标题中的词典原形对应；模型未返回或格式异常时不显示音标，释义照常可用。音标随收藏保存和导出，旧收藏无需迁移；重新取词并收藏可更新旧记录。
-- 弹窗中的保存按钮会保存所选内容、原句、附近上下文、来源、解释方式和结构化解释。相同来源与选区重复收藏会更新解释，保留原创建时间；旧收藏仍可读取。
-- PDF：在工作台点击“打开文档”或拖入文件（100 MB 以内）。保持原页面版式，双击单词直接解释，拖选后点击“解释”才请求模型，与网页一致；支持翻页、适应宽度/适合页面、夜间模式、目录跳转，关闭后重新打开会恢复最近文档、页码和缩放。
-- EPUB：同样从“打开文档”选择 `.epub`。按章节渲染正文，支持上一章/下一章、章节下拉、字号调节和夜间模式；正文可双击/拖选解释和收藏，关闭后恢复章节进度。
-- PDF 文件和阅读进度保存在本机，不上传整份文件；解释时仅把选区和附近文字交给所选 API。右侧支持“当前文档 / 全部收藏”，收藏中的页码可返回原 PDF 页面。重复打开同一份文件不会新增历史条目。
-- 词性统一使用 `n.`、`v.`、`adj.`、`adv.` 等缩写；旧收藏也会按新格式显示。音标、原句、来源与页码随收藏导出。
+## Why
 
-## 检查
+Most reading tools give you a dictionary dump. AI Context Reader tries to answer a narrower question:
 
-运行 `npm test` 检查结构化输出、收藏分类、去重、文档保存和工作台入口；运行 `npm run typecheck` 检查 TypeScript；运行 `npm run build` 生成可加载的插件，`npm run zip` 生成可解压安装包。
+> **What does this word mean _here_?**
 
-## 基础设置与隐私（v0.4.0）
+It separates:
 
-- 设置分为基础、阅读、AI 模型与接口、隐私与历史、允许工作的站点。界面与默认释义语言分别支持简体中文/English，修改只在保存后生效，取消不会修改原设置。
-- 触发可选“快捷查词”或“始终确认”。后者双击也只出现按钮；拖选始终先确认。弹窗有紧凑/适中/宽松三档；局部快捷键默认关闭，可选 Alt+Shift+E / Alt+Shift+X，不覆盖复制，也不在输入框内触发。
-- 长度按整理空白后的选区字符数计算：1500 以内正常；1501–3000 提醒分段但允许查询；3000 以上显示明确提示，不请求模型、不截断，复制照常。PDF 与网页一致，后台和 API 入口再次校验上限。
-- 只有主动查询才发送文字。查询会带一个容量受限的 Context Packet：所在句、相邻句、段落片段和章节标题（有则带）；URL、页面标题和文件名不发送。段落选择只发选区；连接测试只发送内置短句。
-- 查询历史默认关闭，主动收藏不受影响。开启后仅本地记录成功查询的选区、来源、时间、文档页码，最多 200 条，不记录普通浏览。历史写入失败会提示，但不会丢弃解释。
-- PDF/EPUB 文件/阅读进度/最近打开记录使用另一个开关，默认开启；关闭后新打开文件仅在当前页面保留，不自动恢复或保存进度。已有文件、历史和收藏不删除。重新开启后重新打开文件以保存。
-- 站点支持所有普通网页或仅允许名单，排除名单优先，域名覆盖自身与子域名但不匹配近似域名；仅允许模式下空名单禁用全部网页。名单最多 100 项，PDF 不受影响。后台以实际消息来源再次检查站点。此功能控制插件响应，不替代浏览器站点权限；原有 `<all_urls>` 权限未扩大，可在 Edge/Chrome 扩展管理页限制。
-- API Key 仅在本机扩展存储中，不随收藏导出，但客户端密钥并非绝对安全。公开服务若提供统一密钥，必须改为后端代理，绝不能把服务密钥打包进插件；个人 BYOL 继续直连，经后端也不天然更安全。本版没有新增后端或云账号。
+- **Standard meaning** — the common dictionary sense, from a bundled Chinese-English dictionary when available.
+- **Contextual meaning** — what the word or phrase means in the selected sentence and paragraph.
+- **Explanation** — why that contextual sense fits.
 
-## AI 服务商
+The result is a compact card, not a full dictionary page.
 
-| 服务商 | 预设 API 地址 | 默认模型 |
-| --- | --- | --- |
-| GLM（智谱） | `https://open.bigmodel.cn/api/paas/v4` | `glm-4.7` |
-| DeepSeek | `https://api.deepseek.com` | `deepseek-flash` |
-| OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` |
-| MiniMax（国内） | `https://api.minimax.cn/v1` | `MiniMax-M3` |
-| MiniMax（国际） | `https://api.minimax.io/v1` | `MiniMax-M3` |
+---
 
-模型名称可编辑。GLM 使用智谱开放平台通用 API，Coding 套餐专用地址不属于本预设。自定义接口可填基础地址或完整的 `/chat/completions` 地址。自定义接口可勾选“允许本机/局域网 HTTP 接口”，仅对 localhost、私有 IPv4/IPv6 和 `.local/.lan/.home/.internal` 域名生效；公网地址仍必须使用 HTTPS。
+## Features
 
-默认 GLM 模型和 DeepSeek 请求关闭思考，返回 JSON 解释。请求超过 25 秒会给出超时提示；401/402/403/404/429 会分别提示密钥、余额、权限、模型或额度问题。真实解释会把选区和附近上下文发到所选服务商。清空密钥并保存可返回演示模式。
+### Context-aware explanations
 
-OpenRouter 使用该平台的密钥和完整模型 ID；默认模型并非免费，查询会被转交所选模型的提供方。请求要求线路支持 JSON 参数，不自动改用其他模型；可手动选择账户可用且支持 JSON 的型号，免费/限流/数据政策以平台为准。不发送文章地址作为 HTTP-Referer。
+- Word, phrase, sentence, and paragraph selections.
+- A bounded **Context Packet** supplies the enclosing sentence, neighboring sentences, a paragraph fragment, and the section heading when available.
+- The model is asked to choose the contextual sense, not to list every dictionary meaning.
+- Standard and contextual meanings are shown separately.
+- Long selections are summarized instead of being treated as one word.
 
-MiniMax 选择与密钥对应的国内/国际站。默认 `MiniMax-M3` 关闭思考；使用 `reasoning_split` 将思考与最终内容分开。OpenAI 兼容接口未明确记录 `response_format`，因此不强发此参数，而是使用 JSON 提示并复用严格字段校验。手动选择强制思考型号时不尝试关闭思考，预留有限思考预算；`MiniMax-M3.1-Flash` 使用低思考档位，仍受 25 秒超时限制。模型自行输出不合格 JSON 时拒绝结果，不伪造解释或自动重试。HTTP 200 内的 MiniMax 非零业务码也视为失败。
+### Local-first dictionary
 
-新增接口依据（2026-10-21 核对）：[OpenRouter 对话补全](https://openrouter.ai/docs/api/api-reference/chat/create-a-chat-completion)、[MiniMax 国内 OpenAI 兼容接口](https://platform.minimax.cn/docs/api-reference/text-openai-api)、[MiniMax 国际 OpenAI 兼容接口](https://platform.minimax.io/docs/api-reference/text-openai-api)。本轮使用模拟响应验证，无真实账户密钥连通测试。
+- A bundled 20,000-word ECDICT subset for common words.
+- Chinese glosses, IPA, and part-of-speech data.
+- Multi-POS entries are grouped by part of speech.
+- Common heteronyms show pronunciation by sense.
+- If a word is not in the local dictionary, the AI definition is used as a fallback.
+- The dictionary is preloaded when a page mounts, so the first double-click does not wait for a network request.
 
-接口依据（2026-10-21 核对）：[智谱对话补全](https://docs.bigmodel.cn/api-reference/模型-api/对话补全)、[GLM-4.7](https://docs.bigmodel.cn/cn/guide/models/text/glm-4.7)、[DeepSeek 快速开始](https://api-docs.deepseek.com/)、[DeepSeek JSON](https://api-docs.deepseek.com/guides/json_mode/)。自动测试使用模拟响应，不代表已经通过真实账户连通测试。
+### Reading surfaces
 
-已有插件更新：解压新版覆盖原插件文件夹，在 Edge 扩展页点击“重新加载”，再刷新网页及工作台。不要先卸载插件，并保留原文件夹位置，以保留本机配置和收藏。重要收藏建议先导出备份；卸载扩展或清理扩展数据会丢失本机文件及收藏。
+- **Web pages** — select text in normal articles and documentation.
+- **PDF** — page navigation, fit-page mode, night mode, outline, and a side panel.
+- **EPUB** — chapter navigation, font size control, images, chapter progress, and selection lookup.
+- Local files and reading progress stay on your device.
 
-## 范围
+### Notes and article vocabulary
 
-没有云账号、支付、OCR 或知识图谱。扫描版 PDF 暂不支持取词（需要 OCR，刻意留在首版之外）。
+- Add a short note to any saved context.
+- A web-only **Article words** drawer lists the words and phrases you looked up in the current article.
+- Notes are saved with the favorite and auto-save on blur.
+- Notes are included in the library, search, CSV/Anki export, and review answers.
 
-## v0.4.3 · 收藏与 PDF 侧栏
+### Review
 
-- 首次保存按钮显示成功状态；已有词条提示“已收藏，可新增本次语境”，明确点击后保存新语境。原句、来源与页码相同则提示“此语境已保存”，不覆盖旧解释，也不重复写入。
-- 单词按返回的原形归组，短语按完整选区归组；没有可靠原形时使用选中文字，不自行猜测。生词库一张词卡可展开多条语境，分别保留原句、解释、来源及页码，各有“回到原文”。摘要沿用最早收藏的释义，学习状态按词条统一管理。
-- 沿用原收藏表，每条语境独立保存，不迁移、合并删除或改写旧记录。列表和筛选计数按词条；导出仍是原格式的逐语境记录，包含筛选范围内的全部语境。历史版本已覆盖的旧语境无法追溯恢复。
-- PDF 右侧为“解释／生词库”。默认显示生词库，主动查询才切到解释，不再用浮窗遮挡正文；切换这两个入口或收起再展开侧栏，不重复请求已有解释。网页仍用浮窗，点击外部空白关闭。
-- 拖选仍先显示“解释”按钮，复制不触发 AI；快捷查词、始终确认、快捷键及长度限制保持不变。AI 失败显示“AI 解释暂时不可用，请重试”，具体原因可展开，不虚构词典结果。
-- 独立词典已收录到 PRD 待办，本版没有接入本地词库或在线词典，也不增加后台上传、权限和依赖。
+- SM-2-style spaced repetition with local scheduling.
+- Daily limits for new and due cards.
+- Keyboard flow: `Space` reveals, `1–4` rate, `U` undoes.
+- “Again” cards return at the end of the current session.
+- Session progress, undo, and a session summary.
+- Meaning-recall cards: the word stays visible and is highlighted in the source sentence; the question is the meaning, not the spelling.
 
-## v0.4.4 · 相关词汇（第一步）
+### Bring your own key
 
-- 在“我的收藏”或 PDF 右侧生词库展开词卡，查看“与你的阅读有关”。优先列出共同出现在已保存原句中的收藏词，其次列出仅来自同一篇文章或 PDF 的词。后者明确不代表同句共现或同一专业主题。
-- 每个关联可展开原句、来源和 PDF 页码，并复用“回到原文”；点击相关词打开它的词卡，自动清除搜索和学习状态筛选。PDF 的“当前文档／全部收藏”也限制关联的计算范围。
-- 只在本机计算已收藏的词语和原句；已保存摘录可作为原句依据，但不会被当作词条推荐。单词采用已有原形及已保存词形，短语整体匹配，避免 AI 匹配到 chair 等子串。不猜词形，不生成专业标签、同义词或通用搭配。
-- 按来源、页码和整理空白后的原句去重；同页页眉前缀造成的重叠文本保守合并。计数表示已保存语境的不同文本/位置，不是文章全文或英语语料中的真实频率；没有文本坐标时无法精确区分同页重复出现。
-- 最多展示 5 个相关词，每个共现词最多展示 3 条原句依据；没有依据时显示空状态。没有数据库迁移、额外模型请求、文章扫描、新依赖或新增权限。
-- 此版按两步建议完成第一步；独立“词汇联系”导航、主题整理和搭配识别留待后续，独立词典仍暂缓。
+- Direct connection to OpenAI-compatible providers.
+- No API key baked into the extension.
+- Provider and model are configurable.
+- Keys stay in local extension storage and are excluded from exports.
+- Demo mode works without a key.
 
-## v0.4.5 · 连接测试反馈
+---
 
-测试中、成功和失败的提示显示在“测试连接”按钮旁，同排布局，长文字自然换行。修改接口、模型、密钥或切换服务商时清除旧测试结果。读取/保存配置的提示仍位于设置页底部；工作台与独立设置页复用同一实现，未改变连接请求或密钥存储方式。
+## How it works
 
-## v0.4.6 · 收藏备份与恢复
+```text
+selection on a page / PDF / EPUB
+            │
+            ▼
+  Context Packet v2
+  sentence + neighbors + paragraph + heading
+            │
+            ▼
+  background service worker ──────► selected AI provider
+            │                              (BYOK, direct)
+            ▼
+  ReaderCard
+  standard definition · contextual meaning · explanation · note
+            │
+            ▼
+  local Dexie / IndexedDB
+  favorites · contexts · notes · review schedule
+```
 
-- “我的收藏”右上角选择“备份与恢复 → 备份全部收藏”，下载本机所有生词、摘录及其语境，不受当前筛选影响。“导出当前列表”仍只导出筛选范围。
-- 选择“恢复备份…”并打开本插件导出的 JSON，先查看新增/重复数量，再确认恢复；取消不会写入。兼容旧版导出的收藏数组，单次最多 20 MB、10000 条语境；超过时用类别、搜索或学习状态分批导出。
-- 仅合并新增语境，重复项（包括备份内部重复）跳过，不覆盖已有收藏或学习状态。新词保留备份时间、状态、音标、释义、原句、来源及页码；新增到已有词的语境沿用当前学习状态。导入记录的本机编号重新生成。
-- 任一记录无效则整份拒绝，数据库写入失败整批回滚。仅复制收藏字段，不导入未知配置字段；不恢复 API Key、阅读设置、查询历史或 PDF 文件。本机缺少的 PDF 需重新打开，原文件名和页码仍保留。备份含收藏原句与网址，请妥善保管。
-- 验收：192 项自动测试、类型检查和插件打包；本地浏览器实际验证文件选择、预览、取消、恢复、重复恢复、异常文件无部分写入、筛选下全量备份、缺失 PDF 提示，以及真实 IndexedDB 事务回滚。仅使用自建测试数据，无真实密钥或付费 API 调用。
+The page never receives the API key. Only the background service worker sends model requests. The extension does not send URLs, page titles, or file names to the model.
 
-## v0.8.0 · 复习会话 v2
+More detail: [ARCHITECTURE.md](ARCHITECTURE.md).
 
-- 每日新词/到期卡上限可设置，默认 20 / 100；超出部分留到下一次。
-- 复习页显示进度、已完成数量和未排入的积压量。
-- 键盘：空格显示答案，1–4 评分，U 撤销。
-- “没想起来”会在本次会话末尾再出现，同时仍按 10 分钟后复习调度。
-- 评分后可以撤销，恢复上一次的间隔、ease 和到期时间。
-- 结束时显示评分统计、再来一组和撤销入口。
-- 四个按钮改为“没想起来 / 很费劲 / 想起来了 / 太容易”，并解释首次复习为何困难和记得都是 1 天。
-- 复习改为“意义回忆”：单词保持可见，例句中高亮该词，不再出现“上面显示单词、下面又让你填空”的矛盾。
-- 词形变化或原句匹配失败时，不再显示永远填不上的空白，改为展示完整原句。
-- 页面加载时预加载本地词典，首次双击不再看起来像在等 AI 才显示标准释义。
-- 答案区分“语境义”和“标准义”。
-- 验收：263 项自动测试、类型检查和插件打包通过。
+---
 
-## v0.7.10 · Notes 与本文词汇抽屉
+## Install
 
-- 每条已保存语境可以写一条简短笔记，比如“我的例句：...”。
-- 笔记随收藏保存，失焦自动保存，不设置单独的“保存笔记”按钮。
-- 笔记进入生词库、搜索、CSV/Anki 导出和 SRS 复习。
-- 网页右下角增加“本文词汇”抽屉：列出当前文章查过的词，支持搜索、已收藏/有笔记筛选。
-- 抽屉内直接展开上下文释义和笔记编辑，不再弹出另一张解释卡片。
-- 卡片关闭键改为 SVG X，去掉方框，避免字体字符偏移。
-- 验收：258 项自动测试、类型检查和插件打包通过。
+### From a release
 
-## v0.7.9 · 卡片对齐修正
+1. Open [Releases](https://github.com/royal-byte/ai-context-reader/releases).
+2. Download the latest `ai-context-reader-*.zip`.
+3. Unzip it.
+4. In Edge, open `edge://extensions`; in Chrome, open `chrome://extensions`.
+5. Enable **Developer mode**.
+6. Choose **Load unpacked** and select the folder containing `manifest.json`.
+7. Reload the extension after updating.
 
-- 关闭按钮改用 grid 居中，`×` 在 26×26 方框内水平和垂直居中。
-- 语境义块和上下文释义块之间增加 12px 外边距，两个绿色背景不再粘连。
-- 验收：254 项自动测试、类型检查和插件打包通过。
+Requires Chromium / Edge 120+.
 
-## v0.7.8 · 词性间距与语境义标点
+### From source
 
-- 多词性行改成行内文本，词性和释义之间只保留一个普通空格。
-- 去掉语境义前的 `·`，现在显示 `n. 编码会话`，不再是 `n. · 编码会话`。
-- 验收：254 项自动测试、类型检查和插件打包通过。
+```bash
+npm install
+npm run build
+```
 
-## v0.7.7 · 标准释义优先显示
+Then load `.output/chrome-mv3` as an unpacked extension.
 
-- 标准释义移到语境义上方，本地词典返回后立即显示，不再等 AI。
-- 语境义、上下文解释和整句翻译仍按原顺序显示在下面。
-- 多词性行缩小词性列宽度和间距，避免 `n.` 与释义之间出现大片空白。
-- 验收：254 项自动测试、类型检查和插件打包通过。
+For development:
 
-## v0.7.6 · 长段落输出容错
+```bash
+npm run dev
+```
 
-- 段落解释不再因为模型省略 `examples`、返回字符串或超长示例而整段失败。
-- `examples` 改为可选元数据：缺失用空数组，字符串自动包装，超长自动截断。
-- Prompt 仍要求模型始终返回 `examples` 数组；没有合适例句时返回 `[]`。
-- 修复划取整段话时报“API 返回 examples 格式不正确”的问题。
-- 验收：254 项自动测试、类型检查和插件打包通过。
+---
 
-## v0.7.5 · 多词性卡片与去重
+## Configure
 
-- 本地词典的释义按词性拆成结构化 senses，不再是一整串 `n. / vt. ...`。
-- 卡片先显示语境义，再显示按词性分组的常见释义。
-- 语境词性排第一，其他词性仍显示但为次级。
-- 常见异音词按词性显示音标：record、present、produce、object、minute 等。
-- 只有语境义与标准义**完全一致**（归一化后）才合并；不同义项保持两行。
-- 收藏保存完整标准释义、词性和音标。
-- 验收：254 项自动测试、类型检查和插件打包通过。
+Open the workspace → **Settings** → **AI model and API**.
 
-## v0.7.4 · PDF 适合页面抖动修复
+| Provider                | Default endpoint                       | Default model        |
+| ----------------------- | -------------------------------------- | -------------------- |
+| OpenAI                  | `https://api.openai.com/v1`            | `gpt-4o-mini`        |
+| DeepSeek                | `https://api.deepseek.com`             | `deepseek-flash`     |
+| GLM (Zhipu)             | `https://open.bigmodel.cn/api/paas/v4` | `glm-4.7`            |
+| OpenRouter              | `https://openrouter.ai/api/v1`         | `openai/gpt-4o-mini` |
+| MiniMax (China)         | `https://api.minimax.cn/v1`            | `MiniMax-M3`         |
+| MiniMax (International) | `https://api.minimax.io/v1`            | `MiniMax-M3`         |
+| Custom                  | Your compatible endpoint               | Your model           |
 
-- 修复选择“适合页面”后 PDF 页面持续抖动的问题。
-- 阅读区预留稳定滚动条空间；适合页面模式下隐藏滚动条，并把页面放进固定尺寸的居中舞台，避免“滚动条 → 尺寸变化 → 重新缩放”的反馈环。
-- 验收：250 项自动测试、类型检查和插件打包通过。
+Custom endpoints may use HTTPS, or HTTP on localhost/private LAN addresses when explicitly enabled. A full `/chat/completions` URL is also accepted.
 
-## v0.7.3 · 本地标准释义
+The extension requests JSON output and validates the response fields. Provider errors such as invalid key, insufficient balance, missing permission, unknown model, and rate limiting are surfaced separately.
 
-- 单词的“标准释义”优先取本地 ECDICT 子集，不再使用模型返回的语境 `definition`。
-- AI 加载期间就先显示本地中文标准释义、多个义项和词性；AI 只补语境义、上下文解释和整句翻译。
-- 本地没有该词时才回退到模型 `definition`。
-- 收藏时保存本地标准释义/词性/音标，生词库不会继承模型的语境义。
-- 例：`harness` 标准义显示“马具/挽具/利用”，语境义可以是“框架结构”；`agent` 标准义显示“代理商/代理程序”，语境义可以是“智能体”。
-- 验收：250 项自动测试、类型检查和插件打包通过。
+---
 
-## v0.7.2 · 中文释义修复
+## Privacy
 
-- 所有解释字段（包括 `definition`）明确要求简体中文；禁止把英文词典释义直接放进标准释义。
-- 短语/句子/段落的 prompt 也明确要求 `definition` 是中文常用义或摘要。
-- 缓存版本升级，旧的英文释义缓存不会再命中。
-- 单词仍返回英文释义时，用本地中文词典补标准释义、词性和音标。
-- 短语/句子/段落仍返回英文释义时，用中文语境翻译兜底。
-- 验收：249 项自动测试、类型检查和插件打包通过。
+- No account, backend, analytics, or telemetry.
+- Only an active selection is sent to the model.
+- Context is bounded: words use their sentence; sentences and paragraphs use the selection.
+- URLs, page titles, and local file names are not sent to the model.
+- API keys are stored in local extension storage; they are not included in exports.
+- Favorites, contexts, notes, review data, PDFs, and EPUB progress stay in local IndexedDB.
+- Query history is off by default.
+- PDF/EPUB binaries never leave the device.
 
-## v0.7.1 · Context Packet v2
+Client-side API keys are not equivalent to a secure server-side secret. Use the extension on a trusted device and revoke the key at the provider if needed.
 
-- 查询会构造容量受限的结构化上下文：选区、所在句、前后句、段落片段、章节标题和来源类型。
-- 每个字段单独限长；不发送 URL、页面标题或文件名。
-- Prompt 明确要求用所在句和相邻句判断语境义；`definition` 保留常见词典义，`translation` 给语境义，`explanation` 只解释为什么，不重复前两者。
-- `partOfSpeech` 按语境词性输出；有多个词性时不在一次结果里全部罗列。
-- Packet 进入本地缓存 key：同一个词在不同语境不会误用旧解释。
-- 验收：247 项自动测试、类型检查和插件打包通过。
+Full policy: [PRIVACY.md](PRIVACY.md). Security: [SECURITY.md](SECURITY.md).
 
-## v0.7.0 · PDF 体验与 EPUB
+---
 
-- PDF 支持键盘翻页（←/→、PageUp/PageDown、Home/End）、“适合页面”缩放、夜间模式和目录跳转。
-- 支持直接打开本地 `.epub`：解析 container/OPF/spine，按章节渲染正文和图片，提供上一章/下一章、章节下拉、字号调节。
-- EPUB 章节会做安全清洗：移除脚本、样式、表单、iframe 和事件属性；图片改成本地 blob URL，不上传文件。
-- EPUB 的章节进度进入阅读历史；正文可直接双击/拖选，沿用英文筛选、语境解释、收藏和回到原文。
-- PDF/EPUB 文件与进度仍只保存在本机；新增 JSZip，并增加 jsdom EPUB 解析回归测试。
-- 验收：243 项自动测试、类型检查和插件打包通过。
+## Tech stack
 
-## v0.6.0 · 复习与离线词典
+- Chrome/Edge Manifest V3
+- WXT
+- React 19
+- TypeScript
+- Dexie / IndexedDB
+- PDF.js
+- JSZip
+- Vitest
 
-- 新增“复习”导航：按到期/新词排队，一次一张卡；用原句 cloze 回忆，再选择 Again/Hard/Good/Easy。
-- SM-2 风格调度：记录 `dueAt`、间隔、ease、复习次数和遗忘次数；间隔达到 21 天后自动标记“已掌握”。
-- 新词每次最多进入 20 张；到期卡优先；复习字段随收藏一起备份/导出。
-- 内置 20,000 词 ECDICT（MIT）离线子集：IPA、中文释义、词性；单词查词先本地秒出，AI 只补充语境义。
-- AI 加载中或失败时显示本地词典释义；支持常见词形回退（复数、过去式、进行时、双写辅音）。
-- 词典来源、构建脚本和许可证在 `public/dictionary/` 与 `scripts/build_dictionary.py`。
-- 验收：240 项自动测试、类型检查和插件打包通过。
+---
 
-## v0.5.0 · 阅读、隐私与发布优化
+## Development
 
-- 阅读卡片显示语境义和例句；收藏详情补全用法、结构、要点和例句。
-- 支持删除单条语境、整个词条/摘录组、查询历史和本机 PDF；支持 JSON、CSV、Anki TSV 导出。
-- 支持按最近/字母/学习状态排序，搜索范围覆盖解释、原句和来源标题。
-- 卡片可“在此站点停用”；成功解释按模型/模式/文本/上下文缓存 7 天，最多 500 条，修改 API 设置后清空。
-- 默认只对英文选区触发；中文、日文、韩文等选区不显示解释按钮、不请求模型，可在设置中关闭。
-- 单词支持浏览器内置英文发音，不增加网络请求或权限。
-- 继续收紧密钥/消息/收藏边界：API Key 不对 content script 开放，消息按来源校验，closed shadow + `isTrusted`，收藏字段限长，来源必须匹配当前页面。
-- 请求超时降为 25 秒，加入 keepalive 与取消；Dexie v4 索引 + v5 缓存，翻页不重读历史，设置页按需加载。
-- 权限收窄为 HTTP(S) 与 storage/tabs；新增图标、页面标题、CI、隐私/安全说明和 MIT 许可证。
-- 验收：232 项自动测试、类型检查和插件打包；CI 在 push 与手动触发时执行 typecheck、测试、构建和 zip。仅使用自建测试数据，无真实密钥或付费 API 调用。
-- 已知限制（0.5.0 时）：暂无 PDF 搜索/目录/链接注释/连续滚动/夜间模式；Workbench 组件拆分、ESLint、Playwright E2E 留待后续。
+```bash
+npm install
+npm test
+npm run typecheck
+npm run build
+npm run zip
+```
+
+`npm test` runs the Vitest suite. `npm run build` produces the loadable extension. `npm run zip` produces a store-ready archive.
+
+Project layout:
+
+```text
+entrypoints/        content script, background worker, PDF/EPUB workspace
+src/                reader, dictionary, API, storage, review, notes
+public/dictionary/  ECDICT subset and license
+public/pdfjs/       bundled PDF.js worker, cmaps, fonts, wasm
+tests/              unit and rendering tests
+```
+
+---
+
+## Contributing
+
+Issues and pull requests are welcome. Please read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a large PR.
+
+Especially useful:
+
+- reproducible bug reports with browser, page type, and steps;
+- dictionary coverage and wording improvements;
+- PDF/EPUB accessibility and layout fixes;
+- tests for edge cases;
+- documentation and translations.
+
+Please do not include API keys, private documents, or personal reading data in issues.
+
+For security-sensitive reports, follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
+
+---
+
+## Limitations
+
+- The local dictionary is a 20,000-word high-frequency subset; uncommon words fall back to the model.
+- Scanned PDFs without a text layer are not supported (no OCR).
+- EPUB support does not cover DRM, fixed-layout fidelity, or footnote navigation.
+- There is no cloud sync or account system; data stays on the device.
+- BYOK requires an API account and a key from a supported provider.
+- Context quality depends on the selected model; the extension validates output but cannot guarantee factual correctness.
+- The extension runs on normal HTTP(S) pages; browser internal pages, some canvas editors, and cross-origin iframes may not expose selectable text.
+
+---
+
+## Acknowledgements
+
+- [ECDICT](https://github.com/skywind3000/ECDICT) — MIT-licensed English-Chinese dictionary data used for the bundled subset.
+- [PDF.js](https://mozilla.github.io/pdf.js/) — PDF rendering and text layer.
+- [JSZip](https://stuk.github.io/jszip/) — EPUB container parsing.
+- [WXT](https://wxt.dev/), [React](https://react.dev/), [Dexie](https://dexie.org/), and [Vitest](https://vitest.dev/).
+
+---
+
+## License
+
+[MIT](LICENSE) © AI Context Reader contributors.
+
+The MIT license applies to the source code. The project name and icon are not granted for use in a way that suggests official endorsement of a fork.
