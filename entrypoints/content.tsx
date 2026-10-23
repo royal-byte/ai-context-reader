@@ -1,13 +1,15 @@
 import { createRoot, type Root } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { SelectionReader, selectionIntent } from '../src/SelectionReader';
+import { ArticleVocabulary, type ArticleLookup, type ArticleSelection } from '../src/ArticleVocabulary';
 import { contextForRange, contextPacketForRange } from '../src/selection';
 import { isLikelyEnglish } from '../src/language';
-import { cleanSelection, MAX_SELECTION_LENGTH } from '../src/reading';
-import type { ContextPacket } from '../src/types';
+import { cleanSelection, inferReadingMode, MAX_SELECTION_LENGTH } from '../src/reading';
+import type { ContextPacket, Explanation } from '../src/types';
+import type { FavoriteState } from '../src/library';
 import {
   DEFAULT_PREFERENCES, isEditableTarget, loadPreferences, matchesReaderShortcut, normalizePreferences,
-  siteAllowed, useReaderPreferences, type ReaderPreferences
+  siteAllowed, uiText, useReaderPreferences, type ReaderPreferences
 } from '../src/preferences';
 import './content/style.css';
 
@@ -107,7 +109,35 @@ export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], css
 function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => void, matcher: (event: KeyboardEvent) => boolean) => void }) {
   const [current, setCurrent] = useState<Selection | null>(null);
   const [queued, setQueued] = useState<Selection | null>(null);
+  const [lookups, setLookups] = useState<ArticleLookup[]>([]);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const { preferences, ready } = useReaderPreferences();
+  const t = uiText(preferences.uiLanguage);
+  const track = (value: Selection) => {
+    const text = value.text.trim();
+    if (!text) return;
+    const mode = inferReadingMode(text);
+    if (mode === 'sentence' || mode === 'paragraph') return;
+    const articleSelection: ArticleSelection = {
+      text: value.text,
+      context: value.context,
+      packet: value.packet,
+      sourceUrl: location.href,
+      sourceTitle: document.title,
+      rect: value.rect,
+      immediate: value.immediate,
+      confirmed: value.confirmed
+    };
+    setLookups((previous) => {
+      const existing = previous.find((entry) => entry.text === text);
+      if (existing) return previous.map((entry) => entry.text === text ? { ...entry, selection: articleSelection, createdAt: Date.now() } : entry);
+      const id = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID() : `${Date.now()}-${text}`;
+      return [{ id, text, selection: articleSelection, createdAt: Date.now() }, ...previous].slice(0, 100);
+    });
+  };
+  const updateLookup = (text: string, patch: Partial<ArticleLookup>) => {
+    setLookups((previous) => previous.map((entry) => entry.text === text ? { ...entry, ...patch } : entry));
+  };
   useEffect(() => {
     if (ready && !siteAllowed(location.href, preferences)) { setCurrent(null); setQueued(null); }
     onReady(
@@ -125,10 +155,44 @@ function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => vo
     setQueued(null);
   }, [ready, queued, preferences]);
   useEffect(() => {
-    const close = () => setCurrent(null);
+    const close = () => { setCurrent(null); setDrawerOpen(false); setLookups([]); };
     window.addEventListener('popstate', close);
     window.addEventListener('hashchange', close);
     return () => { window.removeEventListener('popstate', close); window.removeEventListener('hashchange', close); };
   }, []);
-  return current ? <SelectionReader key={`${current.text}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, packet: current.packet, sourceUrl: location.href, sourceTitle: document.title }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} /> : null;
+  const resultForCurrent = (result: Explanation) => {
+    if (!current) return;
+    track(current);
+    updateLookup(current.text.trim(), { translation: result.translation, result });
+  };
+  const stateForCurrent = (state: FavoriteState, note?: string) => {
+    if (!current) return;
+    track(current);
+    updateLookup(current.text.trim(), { saved: state === 'duplicate', ...(note !== undefined ? { note } : {}) });
+  };
+  const savedForCurrent = (note?: string) => {
+    if (!current) return;
+    track(current);
+    updateLookup(current.text.trim(), { saved: true, note });
+  };
+  const saveLookupNote = async (entry: ArticleLookup, note: string) => {
+    if (!entry.result) return;
+    const response = await chrome.runtime.sendMessage({
+      type: 'save',
+      item: {
+        ...entry.result,
+        selectedText: entry.text,
+        context: entry.selection.context,
+        sourceSentence: entry.selection.context,
+        sourceUrl: entry.selection.sourceUrl,
+        sourceTitle: entry.selection.sourceTitle,
+        note: note.trim()
+      }
+    });
+    if (response?.ok) updateLookup(entry.text, { note: note.trim(), saved: true });
+  };
+  return <>
+    {current && <SelectionReader key={`${current.text}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, packet: current.packet, sourceUrl: location.href, sourceTitle: document.title }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} onResult={resultForCurrent} onState={stateForCurrent} onSaved={savedForCurrent} />}
+    {lookups.length > 0 && <ArticleVocabulary entries={lookups} open={drawerOpen} t={t} onClose={() => setDrawerOpen(false)} onToggle={() => setDrawerOpen(true)} onNote={saveLookupNote} />}
+  </>;
 }

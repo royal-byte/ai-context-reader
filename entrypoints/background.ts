@@ -1,4 +1,4 @@
-import { readerDb, saveItem, getFavoriteState, recordQuery } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, getFavoriteNote, recordQuery } from '../src/db';
 import { requestExplanation } from '../src/api';
 import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '../src/validation';
 import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
@@ -171,7 +171,7 @@ export default defineBackground(() => {
           if (message.type === 'favorite-state') {
             const query = normalizeFavoriteQuery(message.item);
             if (isContentPage(sender) && !samePage(query.sourceUrl, sender.url)) throw new Error('收藏来源与当前页面不一致。 / The source does not match this page.');
-            sendResponse({ ok: true, state: await getFavoriteState(query) });
+            sendResponse({ ok: true, state: await getFavoriteState(query), note: await getFavoriteNote(query) });
             return;
           }
           const item = normalizeFavoriteItem(message.item);

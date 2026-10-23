@@ -40,6 +40,13 @@ export async function getFavoriteState(item: FavoriteInput) {
   return sameTerm.length ? 'context' as const : 'new' as const;
 }
 
+export async function getFavoriteNote(item: FavoriteInput) {
+  const term = favoriteKey(item);
+  const context = contextKey(item);
+  const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
+  return sameTerm.find((saved) => (saved.contextKey ?? contextKey(saved)) === context)?.note;
+}
+
 function savedRecord(item: ReaderItem, existing?: ReaderItem, restore = false): ReaderItem {
   const kind = collectionKind(item);
   const { id: _id, ...record } = item;
@@ -82,7 +89,10 @@ export async function saveItem(item: ReaderItem) {
     const context = contextKey(item);
     const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
     const duplicate = sameTerm.find((saved) => (saved.contextKey ?? contextKey(saved)) === context);
-    if (duplicate?.id !== undefined) return { id: duplicate.id, outcome: 'duplicate' as const };
+    if (duplicate?.id !== undefined) {
+      if (item.note !== undefined) await readerDb.items.update(duplicate.id, { note: item.note });
+      return { id: duplicate.id, outcome: 'duplicate' as const };
+    }
     const id = await readerDb.items.add(savedRecord(item, sameTerm[0]));
     return { id, outcome: sameTerm.length ? 'context-added' as const : 'saved' as const };
   });

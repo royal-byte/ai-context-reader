@@ -17,6 +17,7 @@ const CSV_COLUMNS = [
   'examples',
   'sourceTitle',
   'sourceUrl',
+  'note',
   'pageNumber',
   'status',
   'kind',
@@ -48,6 +49,7 @@ export function toCsv(records: ReaderItem[]) {
       item.examples?.join(' | '),
       item.sourceTitle,
       item.sourceUrl,
+      item.note,
       item.pageNumber,
       item.status,
       collectionKind(item),
@@ -98,6 +100,7 @@ export function toAnkiTsv(records: ReaderItem[]) {
         item.explanation,
         item.sourceSentence || item.context,
         ...(item.examples ?? []),
+        item.note,
         item.sentenceTranslation,
         item.sourceTitle,
         item.sourceUrl

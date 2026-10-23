@@ -33,9 +33,9 @@ function SenseList({ groups }: { groups: SenseGroup[] }) {
 }
 
 export type ReadingSelection = { text: string; context: string; sourceUrl: string; sourceTitle: string; documentId?: string; pageNumber?: number; packet?: ContextPacket };
-type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number }; onSaved?: () => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' };
+type Props = { selection: ReadingSelection; close: () => void; anchor?: { left: number; bottom: number; top?: number }; onSaved?: (note?: string) => void; onResult?: (result: Explanation) => void; onState?: (state: FavoriteState, note?: string) => void; preferences?: ReaderPreferences; presentation?: 'popup' | 'panel' | 'inline' };
 
-export function ReaderCard({ selection, close, anchor, onSaved, preferences = DEFAULT_PREFERENCES, presentation = 'popup' }: Props) {
+export function ReaderCard({ selection, close, anchor, onSaved, onResult, onState, preferences = DEFAULT_PREFERENCES, presentation = 'popup' }: Props) {
   const t = uiText(preferences.uiLanguage);
   const card = useRef<HTMLElement>(null);
   const { text, context, sourceUrl, sourceTitle, documentId, pageNumber, packet } = selection;
@@ -51,6 +51,10 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
   const [checking, setChecking] = useState(false);
   const [cached, setCached] = useState(false);
   const [local, setLocal] = useState<DictionaryEntry>();
+  const [note, setNote] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
+  const [noteStatus, setNoteStatus] = useState<'' | 'saved' | 'cleared'>('');
+  const [lastSavedNote, setLastSavedNote] = useState('');
   const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
   const localDefinition = local ? stripDictionaryPos(local.translation) : '';
@@ -86,7 +90,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
     setLoading(true); setResult(undefined); setError(''); setCached(false);
     void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'analyze', text, context: minimalContext(text, context), packet, sourceUrl, sourceTitle, documentId, pageNumber, mode: requestedMode, requestId })).then((response) => {
       if (!active) return;
-      if (response?.ok) { setResult(response.explanation); setCached(Boolean(response.cached)); if (response.warning) setError(response.warning); }
+      if (response?.ok) { setResult(response.explanation); onResult?.(response.explanation); setCached(Boolean(response.cached)); if (response.warning) setError(response.warning); }
       else setError(response?.error ?? t('无法取得解释，请重试。', 'Could not get an explanation. Please retry.'));
     }).catch(() => { if (active) setError(t('扩展连接中断，请重新加载扩展并刷新网页。', 'Extension disconnected. Reload the extension and refresh this page.')); })
       .finally(() => { stopKeepAlive(); if (active) setLoading(false); });
@@ -102,29 +106,64 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
     let active = true;
     setChecking(true);
     void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'favorite-state', item: { selectedText: text, context, sourceUrl, sourceTitle, documentId, pageNumber, sourceSentence: sentence, ...result, mode } })).then((response) => {
-      if (active && response?.ok) setExisting(response.state);
+      if (active && response?.ok) {
+        setExisting(response.state);
+        onState?.(response.state, response.note);
+        if (typeof response.note === 'string') { setNote(response.note); setLastSavedNote(response.note); }
+      }
     }).catch(() => { /* Saving rechecks duplicates inside the database transaction. */ })
       .finally(() => { if (active) setChecking(false); });
     return () => { active = false; };
   }, [result, text, context, sourceUrl, sourceTitle, documentId, pageNumber, mode, sentence]);
 
+  const itemPayload = (): Omit<ReaderItem, 'uniqueKey' | 'createdAt'> => ({
+    ...result!,
+    definition: standardDefinition || result!.definition,
+    partOfSpeech: partOfSpeech || result!.partOfSpeech,
+    phonetic: phonetic || result!.phonetic,
+    note: note.trim(),
+    mode,
+    selectedText: text,
+    context,
+    sourceSentence: sentence,
+    sourceUrl,
+    sourceTitle,
+    documentId,
+    pageNumber
+  });
   const save = async (event?: { isTrusted?: boolean }) => {
     if (event && event.isTrusted === false) return;
     if (!result || loading || saving) return;
     setSaving(true); setError('');
-    const item: Omit<ReaderItem, 'uniqueKey' | 'createdAt'> = { ...result, definition: standardDefinition || result.definition, partOfSpeech: partOfSpeech || result.partOfSpeech, phonetic: phonetic || result.phonetic, mode, selectedText: text, context, sourceSentence: sentence, sourceUrl, sourceTitle, documentId, pageNumber };
+    const item = itemPayload();
     try {
       const response = await chrome.runtime.sendMessage({ type: 'save', item });
-      if (response?.ok) { setSaved(response.outcome ?? 'saved'); if (response.warning) setError(response.warning); onSaved?.(); }
+      if (response?.ok) { setSaved(response.outcome ?? 'saved'); setLastSavedNote(note.trim()); if (response.warning) setError(response.warning); onSaved?.(note.trim()); }
       else setError(response?.error ?? t('收藏失败，请重试。', 'Could not save. Please retry.'));
     } catch { setError(t('收藏失败，请检查扩展连接后重试。', 'Could not save. Check the extension connection and retry.')); }
     finally { setSaving(false); }
+  };
+  const saveNote = async () => {
+    if (!result || loading || noteSaving) return;
+    const trimmed = note.trim();
+    if (trimmed === lastSavedNote) return;
+    setNoteSaving(true); setError(''); setNoteStatus('');
+    try {
+      const response = await chrome.runtime.sendMessage({ type: 'save', item: itemPayload() });
+      if (response?.ok) {
+        setNoteStatus(trimmed ? 'saved' : 'cleared');
+        setLastSavedNote(trimmed);
+        setSaved(response.outcome ?? 'saved');
+        onSaved?.(trimmed);
+      } else setError(response?.error ?? t('笔记保存失败，请重试。', 'Could not save the note. Please retry.'));
+    } catch { setError(t('笔记保存失败，请检查扩展连接后重试。', 'Could not save the note. Check the extension connection and retry.')); }
+    finally { setNoteSaving(false); }
   };
   const size = { compact: { width: 320, height: 480 }, medium: { width: 380, height: 560 }, large: { width: 460, height: 640 } }[preferences.popupSize];
   const position = { width: size.width, maxHeight: `min(${size.height}px, calc(100dvh - 24px))`, ...(anchor ? { left: Math.max(12, Math.min(anchor.left, innerWidth - size.width - 24)), top: Math.max(12, Math.min(anchor.bottom + 12, innerHeight - size.height - 12)) } : { right: 16, bottom: 16 }) };
 
   return <aside ref={card} className={`acr-card${presentation === 'panel' ? ' acr-panel' : ''}`} lang={preferences.uiLanguage} style={presentation === 'popup' ? position : undefined} role={presentation === 'popup' ? 'dialog' : 'region'} aria-label={t('上下文阅读助手', 'Context reader')} onKeyDown={(event) => { if (event.key === 'Escape') close(); }}>
-    <header className="acr-header"><div><div className="acr-title-row"><h2>{shortSelection ? headword : t('阅读助手', 'Reading assistant')}</h2>{shortSelection && (result || local) && <button type="button" className="acr-speak" onClick={() => speakEnglish(headword)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div>{mode === 'word' && phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{phonetic}</span></p>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}>×</button></header>
+    <header className="acr-header"><div><div className="acr-title-row"><h2>{shortSelection ? headword : t('阅读助手', 'Reading assistant')}</h2>{shortSelection && (result || local) && <button type="button" className="acr-speak" onClick={() => speakEnglish(headword)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div>{mode === 'word' && phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{phonetic}</span></p>}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M1.5 1.5 12.5 12.5M12.5 1.5 1.5 12.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></button></header>
     <div className="acr-body" aria-busy={loading}>
       {result?.register === 'demo' && <p className="acr-demo">{t('演示内容 · 配置 API 后获取真实解释', 'Demo · Connect an API for real explanations')}</p>}
       {cached && !loading && <p className="acr-cache">{t('来自本机缓存 · 未重复请求模型', 'From local cache · no new model request')}</p>}
@@ -144,6 +183,11 @@ export function ReaderCard({ selection, close, anchor, onSaved, preferences = DE
         {mode === 'paragraph' && <><details className="acr-details"><summary>{t('关键要点', 'Key points')}</summary><ul>{result.keyPoints?.map((point, index) => <li key={index}>{point}</li>)}</ul></details><details className="acr-details"><summary>{t('展开全文翻译', 'Full translation')}</summary><p>{result.translation}</p></details></>}
         {result.examples.length > 0 && <details className="acr-details"><summary>{t('例句', 'Examples')}</summary><ul>{result.examples.map((example, index) => <li key={index} lang="en">{example}</li>)}</ul></details>}
       </>}
+      {result && !loading && <details className="acr-note-editor" open>
+        <summary>{t('我的笔记', 'My note')}{note && <span className="acr-note-mark">{t('已记录', 'Saved')}</span>}</summary>
+        <textarea value={note} maxLength={2000} onChange={(event) => { setNote(event.target.value); setNoteStatus(''); }} onBlur={() => { void saveNote(); }} placeholder={t('我的例句：...', 'My example: …')} aria-label={t('我的笔记', 'My note')} />
+        <div className="acr-note-actions"><span>{noteStatus === 'saved' ? t('笔记已保存', 'Note saved') : noteStatus === 'cleared' ? t('笔记已清空', 'Note cleared') : `${note.length} / 2000`}</span><span className="acr-note-auto">{noteSaving ? t('自动保存中…', 'Saving…') : t('输入后自动保存', 'Auto-saved')}</span></div>
+      </details>}
     </div>
     <footer className="acr-footer"><p className="acr-save-status" role="status">{saved === 'context-added' ? t('✓ 本次语境已保存', '✓ Context saved') : saved === 'duplicate' || existing === 'duplicate' ? t('此语境已保存', 'This context is already saved') : !saved && existing === 'context' ? t('已收藏，可新增本次语境', 'Already saved. Add this context.') : ''}</p><button className="acr-save" onClick={save} disabled={loading || !result || saving || checking || Boolean(saved) || existing === 'duplicate'}>{saving ? t('正在保存…', 'Saving…') : saved || existing === 'duplicate' ? saved === 'context-added' ? t('✓ 已保存本次语境', '✓ Context saved') : saved === 'duplicate' || existing === 'duplicate' ? t('✓ 此语境已保存', '✓ Context already saved') : shortSelection ? t('✓ 已保存到生词库', '✓ Saved to vocabulary') : t('✓ 已保存为摘录', '✓ Saved as excerpt') : <><span className="acr-save-icon" aria-hidden="true">＋</span>{existing === 'context' ? t('保存本次语境', 'Save this context') : shortSelection ? t('保存到生词库', 'Save to vocabulary') : t('保存为摘录', 'Save as excerpt')}</>}</button><p className="acr-save-hint">{t('支持单词、短语、句子和段落，自动分类保存。', 'Words, phrases, sentences, and paragraphs are filed automatically.')}</p>{/^https?:/.test(sourceUrl) && <button className="acr-site-off" onClick={(event) => { if (!event.isTrusted) return; if (!window.confirm(t('在此站点停用阅读助手？可在设置中重新启用。', 'Disable the reader on this site? You can re-enable it in settings.'))) return; void chrome.runtime.sendMessage({ type: 'disable-site' }).then(() => close()).catch(() => setError(t('停用失败，请重试。', 'Could not disable this site. Please retry.'))); }}>{t('在此站点停用', 'Disable on this site')}</button>}</footer>
   </aside>;

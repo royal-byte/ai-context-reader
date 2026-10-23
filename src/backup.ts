@@ -41,7 +41,7 @@ export function parseBackup(text: string): ReaderItem[] {
       if (!['new', 'reviewing', 'mastered'].includes(record.status as string)) return invalid('status');
       if (item.kind === 'vocabulary') item.status = record.status as ReaderItem['status'];
     }
-    for (const key of ['sourceSentence', 'lemma', 'phonetic', 'partOfSpeech', 'usage', 'sentenceTranslation', 'register', 'documentId'] as const) if (record[key] !== undefined) item[key] = string(key);
+    for (const key of ['sourceSentence', 'lemma', 'phonetic', 'partOfSpeech', 'usage', 'sentenceTranslation', 'register', 'documentId', 'note'] as const) if (record[key] !== undefined) item[key] = string(key);
     if (item.documentId && sourceUrl !== `local-pdf:${item.documentId}`) return invalid('documentId');
     if (record.pageNumber !== undefined) {
       if (!Number.isSafeInteger(record.pageNumber) || (record.pageNumber as number) < 1) return invalid('pageNumber');

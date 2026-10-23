@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.7.10 - 2026-10-23
+
+### Notes and article vocabulary
+
+- Add an optional plain-text note to each saved context in the reader card.
+- Notes are saved with the favorite and auto-save on blur; there is no separate save-note button.
+- Prefill existing notes when the same context is opened again.
+- Show notes in the library detail, search, CSV export, Anki TSV export, and SRS review answer.
+- Add a web-only “本文词汇” drawer that lists words and phrases looked up in the current article.
+- The drawer supports search, saved/with-note filters, inline expansion, and inline note editing.
+- Clicking a drawer entry expands it in place instead of opening another explanation card.
+- Replace the card close glyph with a centered SVG X and remove the visible square background.
+
+### Engineering
+
+- 258 automated tests, typecheck and production build passing.
+
 ## 0.7.9 - 2026-10-22
 
 ### Card alignment

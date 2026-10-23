@@ -357,7 +357,7 @@ export function Workbench() {
   const filtered = useMemo(() => {
     const list = scopedItems.filter((item) => collectionKind(item) === kind)
       .filter((item) => status === 'all' || kind === 'excerpt' || (item.status ?? 'new') === status)
-      .filter((item) => item.contexts.some((context) => `${context.selectedText} ${context.lemma ?? ''} ${context.definition} ${context.translation} ${context.explanation} ${context.sourceSentence ?? ''} ${context.sourceTitle ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())));
+      .filter((item) => item.contexts.some((context) => `${context.selectedText} ${context.lemma ?? ''} ${context.definition} ${context.translation} ${context.explanation} ${context.sourceSentence ?? ''} ${context.sourceTitle ?? ''} ${context.note ?? ''}`.toLowerCase().includes(query.trim().toLowerCase())));
     const statusOrder = { new: 0, reviewing: 1, mastered: 2 } as const;
     return list.sort((a, b) => {
       if (sort === 'alpha') return (a.lemma || a.selectedText).localeCompare(b.lemma || b.selectedText, preferences.uiLanguage);

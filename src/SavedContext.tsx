@@ -63,6 +63,12 @@ export function SavedContext({
           </ul>
         </>
       ) : null}
+      {context.note && (
+        <>
+          <h3>{t('我的笔记', 'My note')}</h3>
+          <p className="saved-note">{context.note}</p>
+        </>
+      )}
       <h3>{t('原句', 'Source sentence')}</h3>
       <blockquote>{context.sourceSentence || context.context}</blockquote>
       {kind === 'vocabulary' && context.sentenceTranslation && (

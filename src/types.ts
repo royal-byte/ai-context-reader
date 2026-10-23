@@ -54,6 +54,8 @@ export type ReaderItem = Explanation & {
   reviewCount?: number;
   lapseCount?: number;
   lastReviewedAt?: number;
+  /** Optional plain-text note attached to this saved context. */
+  note?: string;
 };
 
 export type ReadingDocument = {

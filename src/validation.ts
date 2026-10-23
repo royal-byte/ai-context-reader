@@ -186,7 +186,8 @@ export function normalizeFavoriteItem(value: unknown): ReaderItem {
     ['usage', 'usage', MAX_CONTEXT],
     ['sentenceTranslation', 'sentenceTranslation', MAX_TEXT],
     ['sourceSentence', 'sourceSentence', MAX_CONTEXT],
-    ['register', 'register', 100]
+    ['register', 'register', 100],
+    ['note', 'note', 2_000]
   ];
   for (const [field, key, max] of optional) {
     const entry = optionalItemText(input, key, max);

@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { readerDb, saveItem, getFavoriteState, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm } from '../src/db';
+import { readerDb, saveItem, getFavoriteState, getFavoriteNote, recordQuery, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm } from '../src/db';
 import type { ReaderItem } from '../src/types';
 
 afterEach(() => vi.restoreAllMocks());
@@ -20,6 +20,18 @@ it('leaves the original definition, context, learning state and creation date un
   expect(await saveItem({ ...existing, createdAt: 99, explanation: 'new' })).toEqual({ id: 7, outcome: 'duplicate' });
   expect(add).not.toHaveBeenCalled(); expect(put).not.toHaveBeenCalled();
   expect(await getFavoriteState(existing)).toBe('duplicate');
+});
+
+it('updates and reads a note on an existing context', async () => {
+  mockItems([existing]);
+  const update = vi.spyOn(readerDb.items, 'update').mockResolvedValue(1);
+  expect(await saveItem({ ...existing, note: 'My example: This could undermine trust.' })).toEqual({ id: 7, outcome: 'duplicate' });
+  expect(update).toHaveBeenCalledWith(7, { note: 'My example: This could undermine trust.' });
+});
+
+it('reads a note attached to an existing context', async () => {
+  mockItems([{ ...existing, note: 'My example: This could undermine trust.' }]);
+  expect(await getFavoriteNote(existing)).toBe('My example: This could undermine trust.');
 });
 
 it.each([

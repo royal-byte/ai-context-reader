@@ -36,6 +36,14 @@ it('shows the local dictionary as the standard definition before the AI responds
   expect(markup).not.toContain('本地词典');
 });
 
+it('uses one example placeholder for the optional note', () => {
+  state.values = [{ mode: 'word', definition: '纪录', translation: '纪录', explanation: '这里指最佳成绩', examples: [], partOfSpeech: 'n.' }, false, false, '', '', 0, 'new', false, false, undefined];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text: 'record', context: 'They set a new record.', sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain('我的笔记');
+  expect(markup).toContain('我的例句：...');
+  expect(markup).not.toContain('我原来以为');
+});
+
 it('renders standard senses first and context meaning afterwards', () => {
   state.values = [{ mode: 'word', definition: '纪录', translation: '纪录', explanation: '这里指最佳成绩', examples: [], partOfSpeech: 'n.', sentenceTranslation: '这支队伍创下了新纪录。' }, false, false, '', '', 0, 'new', false, false, {
     word: 'record', phonetic: '/ˈrekərd/', translation: 'n. 纪录, 唱片; v. 记录, 录制', partOfSpeech: 'n. / v.',
