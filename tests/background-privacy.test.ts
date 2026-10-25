@@ -9,7 +9,7 @@ import { lookupWord } from '../src/dictionary';
 vi.mock('../src/api', () => ({ requestExplanation: vi.fn(async () => ({ definition: 'Meaning', translation: 'Translation', explanation: 'Context', examples: [] })) }));
 vi.mock('../src/db', () => ({ readerDb: {}, saveItem: vi.fn(async () => ({ id: 1, outcome: 'saved' })), getFavoriteState: vi.fn(async () => 'new'), getFavoriteNote: vi.fn(async () => undefined), recordQuery: vi.fn(async () => {}) }));
 vi.mock('../src/cache', () => ({ explanationCacheKey: vi.fn(async () => 'cache-key'), readCachedExplanation: vi.fn(async () => undefined), writeCachedExplanation: vi.fn(async () => {}) }));
-vi.mock('../src/dictionary', () => ({ lookupWord: vi.fn(async () => undefined) }));
+vi.mock('../src/dictionary', async (original) => ({ ...await original<typeof import('../src/dictionary')>(), lookupWord: vi.fn(async () => undefined) }));
 let listener: (message: unknown, sender: unknown, respond: (response: any) => void) => void;
 let preferences = { ...DEFAULT_PREFERENCES };
 

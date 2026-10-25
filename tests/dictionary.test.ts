@@ -1,5 +1,15 @@
 import { expect, it } from 'vitest';
-import { dictionaryCandidates, dictionaryPhonetic, normalizeDictionaryGloss, normalizeDictionaryWord, parseDictionarySenses, stripDictionaryPos } from '../src/dictionary';
+import { dictionaryCandidates, dictionaryPhonetic, normalizeDictionaryGloss, normalizeDictionaryWord, parseDictionarySenses, selectionDictionary, stripDictionaryPos } from '../src/dictionary';
+
+it('uses a model-confirmed inflection fallback without borrowing its pronunciation or unrelated POS', () => {
+  const entry = { word: 'go', phonetic: '/ɡoʊ/', translation: 'v. 去; n. 围棋', senses: [{ pos: 'v.', definition: '去', phonetic: '/ɡoʊ/' }, { pos: 'n.', definition: '围棋' }] };
+  expect(selectionDictionary(entry, 'went')).toBeUndefined();
+  expect(selectionDictionary(entry, 'went', { lemma: 'go', partOfSpeech: 'v.' })).toMatchObject({ phonetic: '', translation: '去', senses: [{ pos: 'v.', definition: '去', phonetic: undefined }] });
+  expect(selectionDictionary(entry, 'going', { lemma: 'going', partOfSpeech: 'n.' })).toBeUndefined();
+  expect(selectionDictionary(entry, 'gone', { lemma: 'go', partOfSpeech: 'adj.' })).toBeUndefined();
+  expect(selectionDictionary(entry, 'GO')).toBe(entry);
+  expect(selectionDictionary({ word: 'exhausting', phonetic: '', translation: 'v. exhaust的现在分词', partOfSpeech: 'v.' }, 'exhausting', { lemma: 'exhausting', partOfSpeech: 'adj.' })).toBeUndefined();
+});
 
 it('normalizes punctuation and offers conservative inflection fallbacks', () => {
   expect(normalizeDictionaryWord('“Resilient,”')).toBe('resilient');

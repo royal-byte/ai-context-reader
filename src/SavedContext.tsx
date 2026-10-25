@@ -20,6 +20,7 @@ export function SavedContext({
 }) {
   return (
     <section className="saved-context">
+      {kind === 'vocabulary' && <p lang="en">{context.selectedText}{context.lemma && context.lemma.toLowerCase() !== context.selectedText.toLowerCase() ? ` · ${t('原形', 'Base form')} ${context.lemma}` : ''}{context.baseForm && context.baseForm.toLowerCase() !== context.selectedText.toLowerCase() ? ` · ${t('派生自', 'Derived from')} ${context.baseForm}` : ''}</p>}
       <h3>{t('标准释义', 'Definition')}</h3><p>{stripDefinitionPos(context.definition)}</p>
       {context.explanation && <><h3>{t('上下文释义', 'Meaning in context')}</h3><p>{context.explanation}</p></>}
       {kind === 'vocabulary' && context.translation && (

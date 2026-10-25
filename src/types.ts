@@ -48,6 +48,8 @@ export type Explanation = {
   examples: string[];
   register?: string;
   lemma?: string;
+  /** Optional derivational base; lemma remains the contextual lexical headword. */
+  baseForm?: string;
   phonetic?: string;
   partOfSpeech?: string;
   usage?: string;

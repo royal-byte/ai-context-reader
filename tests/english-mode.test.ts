@@ -16,6 +16,30 @@ const settings = { endpoint: 'https://api.openai.com/v1', model: 'test-model', a
 const response = (value: unknown) => new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(value) } }] }));
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
+it('preserves lexical headwords and derivational bases through validation, grouping and backup', () => {
+  const adjective = normalizeFavoriteItem({ ...zh, selectedText: 'exhausting', lemma: 'exhausting', baseForm: 'exhaust', partOfSpeech: 'adj.', definition: '令人疲惫的' });
+  const participle = normalizeFavoriteItem({ ...zh, selectedText: 'exhausting', lemma: 'exhaust', partOfSpeech: 'v.' });
+  const past = { ...participle, selectedText: 'exhausted' };
+  expect(contentKey(adjective)).not.toBe(contentKey(participle));
+  expect(contentKey(past)).toBe(contentKey(participle));
+  expect(contentKey({ ...zh, selectedText: 'went', lemma: 'go' })).toBe(contentKey({ ...zh, selectedText: 'go', lemma: 'go' }));
+  expect(parseBackup(JSON.stringify([adjective]))[0]).toMatchObject({ selectedText: 'exhausting', lemma: 'exhausting', baseForm: 'exhaust' });
+  expect(toCsv([adjective])).toContain('baseForm');
+  expect(toCsv([adjective])).toContain('"exhaust"');
+  expect(() => normalizeFavoriteItem({ ...adjective, baseForm: 42 })).toThrow();
+});
+
+it.each(['zh-CN', 'en'] as const)('requests selected-form IPA and contextual lexical headwords in %s', async (language) => {
+  const result = { mode: 'word', lemma: 'exhausting', baseForm: 'exhaust', partOfSpeech: 'adj.', phonetic: '/ɪɡˈzɔːstɪŋ/', definition: language === 'en' ? 'Very tiring.' : '令人疲惫的', translation: language === 'en' ? 'Very tiring.' : '令人疲惫的', explanation: language === 'en' ? 'Describes the day.' : '描述这一天令人疲惫。', examples: [] };
+  const fetchMock = vi.fn(async () => response(result)); vi.stubGlobal('fetch', fetchMock);
+  expect(await requestExplanation(settings, 'exhausting', 'An exhausting day.', 'word', language)).toMatchObject(result);
+  const prompt = JSON.parse((fetchMock.mock.calls[0] as unknown as [unknown, RequestInit])[1].body as string).messages[0].content;
+  expect(prompt).toContain('phonetic is US IPA of the SELECTED FORM');
+  expect(prompt).toContain('went -> go');
+  expect(prompt).toContain('lemma exhausting, adj.');
+  expect(prompt).toContain('never the grouping key');
+});
+
 it.each(['sentence', 'paragraph'] as const)('accepts English %s with only the core paraphrase', (mode) => {
   const value = parseExplanation(JSON.stringify({ mode, translation: 'The strategy may reduce profits.' }), 'auto', 'en');
   expect(value).toMatchObject({ mode, translation: 'The strategy may reduce profits.', definition: '', explanation: '', examples: [], explanationLanguage: 'en' });

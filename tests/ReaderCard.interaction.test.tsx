@@ -4,6 +4,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { ReaderCard } from '../src/ReaderCard';
 import { DEFAULT_PREFERENCES } from '../src/preferences';
+import { speakEnglish } from '../src/speech';
+
+vi.mock('../src/speech', () => ({ speakEnglish: vi.fn() }));
 
 let root: Root;
 let host: HTMLDivElement;
@@ -66,4 +69,24 @@ it('renders an expression bridge and supports the word-only override', async () 
   expect(host.textContent).toContain('The particle changes the meaning.');
   await act(async () => host.querySelector<HTMLButtonElement>('.acr-expression-override')!.click());
   expect(requests[1]!.message.expressionPolicy).toBe('word');
+});
+
+it.each(['zh-CN', 'en'] as const)('keeps the selected form through an async lemma response in %s', async (language) => {
+  const selected = { ...selection, text: 'went', context: 'They went home.' };
+  vi.mocked(chrome.runtime.sendMessage).mockImplementation(((message: any) => {
+    if (message.type === 'dictionary-lookup') return Promise.resolve({ ok: true, entry: { word: 'go', phonetic: '/ɡoʊ/', translation: 'v. 去', definitionEn: 'v. To move.', partOfSpeech: 'v.' } });
+    if (message.type === 'analyze') return new Promise((resolve, reject) => requests.push({ message, resolve, reject }));
+    return Promise.resolve({ ok: true, state: 'new' });
+  }) as any);
+  await act(async () => root.render(<ReaderCard selection={selected} preferences={{ ...DEFAULT_PREFERENCES, explanationLanguage: language }} close={() => {}} />));
+  expect(host.querySelector('h2')?.textContent).toBe('went');
+  expect(host.textContent).not.toContain('/ɡoʊ/');
+  await act(async () => requests[0]!.resolve({ ok: true, explanation: { ...explanation(language), lemma: 'go', partOfSpeech: 'v.', phonetic: '/went/' } }));
+  expect(host.querySelector('h2')?.textContent).toBe('went');
+  expect(host.textContent).toContain('/went/');
+  expect(host.textContent).not.toContain('/ɡoʊ/');
+  expect(host.textContent).toContain(language === 'en' ? 'Base form go' : '原形 go');
+  await act(async () => host.querySelector<HTMLButtonElement>('.acr-speak')!.click());
+  expect(speakEnglish).toHaveBeenLastCalledWith('went');
+  expect(vi.mocked(chrome.runtime.sendMessage).mock.calls.some(([message]: any[]) => message.type === 'favorite-state' && message.item.selectedText === 'went' && message.item.lemma === 'go')).toBe(true);
 });

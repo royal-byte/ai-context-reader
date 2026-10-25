@@ -9,6 +9,24 @@ vi.mock('react', async (original) => ({
 }));
 
 it.each([
+  { text: 'exhausting', lemma: 'exhausting', baseForm: 'exhaust', pos: 'adj.', definition: '令人疲惫的', phonetic: '/ɪɡˈzɔːstɪŋ/' },
+  { text: 'exhausted', lemma: 'exhausted', baseForm: 'exhaust', pos: 'adj.', definition: '精疲力尽的', phonetic: '/ɪɡˈzɔːstɪd/' },
+  { text: 'went', lemma: 'go', pos: 'v.', definition: '去', phonetic: '/went/' },
+  { text: 'running', lemma: 'run', pos: 'v.', definition: '跑', phonetic: '/ˈrʌnɪŋ/' }
+])('keeps the selected form $text and its context metadata instead of the base dictionary', ({ text, lemma, baseForm, pos, definition, phonetic }) => {
+  state.values = [{ mode: 'word', lemma, baseForm, definition, translation: definition, explanation: '语境说明', examples: [], partOfSpeech: pos, phonetic }, false, false, '', '', 0, 'new', false, false, {
+    word: baseForm || lemma, translation: 'v. 原形动词义', phonetic: '/wrong/', partOfSpeech: 'v.', senses: [{ pos: 'v.', definition: '原形动词义' }]
+  }];
+  const markup = renderToStaticMarkup(<ReaderCard selection={{ text, context: `The word is ${text}.`, sourceUrl: 'https://example.com', sourceTitle: 'Article' }} close={() => {}} />);
+  expect(markup).toContain(`<h2>${text}</h2>`);
+  expect(markup).toContain(phonetic);
+  expect(markup).not.toContain('/wrong/');
+  expect(markup).toContain(`<span class="acr-pos">${pos} </span>`);
+  expect(markup).toContain(baseForm ? `派生自 ${baseForm}` : `原形 ${lemma}`);
+  if (baseForm) expect(markup).not.toContain('原形动词义');
+});
+
+it.each([
   'undermine',
   'undermine profitability',
   'The strategy could undermine profitability.',

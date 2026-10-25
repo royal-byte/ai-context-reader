@@ -15,6 +15,23 @@ export type DictionaryEntry = {
   senses?: DictionarySense[];
 };
 
+/** A fallback is useful only when the model confirms the same lexical word and POS. */
+export function selectionDictionary(entry: DictionaryEntry | undefined, text: string, result?: { lemma?: string; partOfSpeech?: string }) {
+  if (!entry) return undefined;
+  const exact = normalizeDictionaryWord(entry.word) === normalizeDictionaryWord(text);
+  const pos = (value: string) => value.toLowerCase().replace(/\.$/, '').replace(/^(vt|vi)$/, 'v').replace(/^a$/, 'adj');
+  const matches = (sense: DictionarySense) => Boolean(result?.partOfSpeech && pos(sense.pos) === pos(result.partOfSpeech));
+  const allSenses = entry.senses ?? parseDictionarySenses(entry.translation, entry.partOfSpeech);
+  const allEnglishSenses = entry.englishSenses ?? (entry.definitionEn ? parseDictionarySenses(entry.definitionEn, entry.partOfSpeech) : []);
+  if (exact) return !result?.partOfSpeech || [...allSenses, ...allEnglishSenses].some(matches) || [...allSenses, ...allEnglishSenses].every((sense) => !sense.pos) ? entry : undefined;
+  if (!result?.lemma || normalizeDictionaryWord(entry.word) !== normalizeDictionaryWord(result.lemma)) return undefined;
+  const senses = allSenses.filter(matches);
+  const englishSenses = allEnglishSenses.filter(matches);
+  if (!senses.length && !englishSenses.length) return undefined;
+  const withoutPronunciation = (sense: DictionarySense) => ({ ...sense, phonetic: undefined });
+  return { ...entry, phonetic: '', partOfSpeech: result.partOfSpeech, senses: senses.map(withoutPronunciation), englishSenses: englishSenses.map(withoutPronunciation), translation: senses.map((sense) => sense.definition).join('；'), definitionEn: englishSenses.map((sense) => sense.definition).join('; ') };
+}
+
 let entries: Promise<Map<string, DictionaryEntry>> | undefined;
 
 const POS_PREFIX = /^(n|v|vt|vi|adj|adv|pron|prep|conj|art|num|aux|int|interj|a|ad)\.\s*/i;

@@ -23,7 +23,7 @@ const CSV_COLUMNS = [
   'status',
   'kind',
   'createdAt',
-  'Language', 'Definition', 'In Context', 'Paraphrase', 'Expression', 'Expression Type', 'Selected Word', 'bridge', 'transfer', 'sourcePosition'
+  'Language', 'Definition', 'In Context', 'Paraphrase', 'Expression', 'Expression Type', 'Selected Word', 'bridge', 'transfer', 'sourcePosition', 'baseForm'
 ] as const;
 
 const clean = (value: unknown) =>
@@ -60,7 +60,7 @@ export function toCsv(records: ReaderItem[]) {
       savedLanguage(item) === 'en' ? item.definition : '',
       savedLanguage(item) === 'en' && collectionKind(item) === 'vocabulary' ? item.translation : '',
       savedLanguage(item) === 'en' && collectionKind(item) === 'excerpt' ? item.translation : '',
-      item.expression?.text, item.expression?.type, item.expression?.selectedText, item.bridge, item.transfer?.join(' | '), item.sourcePosition
+      item.expression?.text, item.expression?.type, item.expression?.selectedText, item.bridge, item.transfer?.join(' | '), item.sourcePosition, item.baseForm
     ]
       .map(csvCell)
       .join(',')

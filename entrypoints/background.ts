@@ -8,7 +8,7 @@ import { isLikelyEnglish } from '../src/language';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
 import { openWorkspace } from '../src/workspace';
 import { explanationCacheKey, readCachedExplanation, writeCachedExplanation } from '../src/cache';
-import { lookupWord } from '../src/dictionary';
+import { lookupWord, selectionDictionary } from '../src/dictionary';
 import { contextPacketCacheValue, normalizeContextPacket } from '../src/context';
 
 const settings = async () => normalizeApiSettings((await chrome.storage.local.get(SETTINGS_KEY))[SETTINGS_KEY]);
@@ -20,8 +20,11 @@ const stripDictionaryPos = (value: string) => value.replace(/^(?:n|v|vt|vi|adj|a
 async function ensureChineseDefinition(explanation: Explanation, mode: string, text: string, language: string) {
   if (language !== 'zh-CN' || hasHan(explanation.definition)) return explanation;
   if (mode === 'word') {
-    let entry: { translation?: string; partOfSpeech?: string; phonetic?: string } | undefined;
-    try { entry = await lookupWord(explanation.lemma || text); }
+    let entry;
+    try {
+      entry = selectionDictionary(await lookupWord(text), text, explanation);
+      if (!entry && explanation.lemma) entry = selectionDictionary(await lookupWord(explanation.lemma), text, explanation);
+    }
     catch { return explanation; }
     if (!entry?.translation) return explanation;
     return {

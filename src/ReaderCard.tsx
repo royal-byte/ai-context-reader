@@ -6,10 +6,10 @@ import type { Explanation, ReaderItem, ContextPacket, ExplanationLanguage, PdfAn
 import { formatPartOfSpeech, type FavoriteState } from './library';
 import { keepServiceWorkerAlive } from './keepalive';
 import { speakEnglish } from './speech';
-import { normalizeDictionaryGloss, stripDictionaryPos, type DictionaryEntry, type DictionarySense } from './dictionary';
+import { normalizeDictionaryGloss, normalizeDictionaryWord, selectionDictionary, stripDictionaryPos, type DictionaryEntry, type DictionarySense } from './dictionary';
 
 type SenseGroup = { pos: string; definitions: DictionarySense[] };
-const posKey = (value: string) => value.toLowerCase().replace(/\.$/, '');
+const posKey = (value: string) => value.toLowerCase().replace(/\.$/, '').replace(/^(vt|vi)$/, 'v').replace(/^a$/, 'adj');
 
 function groupSenses(senses: DictionarySense[], contextPos?: string): SenseGroup[] {
   const groups = new Map<string, SenseGroup>();
@@ -67,9 +67,10 @@ export function ReaderCard({ selection, close, anchor, onSaved, onResult, onStat
   useEffect(() => { setLanguage(preferences.explanationLanguage); }, [preferences.explanationLanguage]);
   const sentence = sourceSentence(text, context);
   const shortSelection = mode === 'word' || mode === 'phrase';
-  const localDefinition = mode === 'word' && local ? stripDictionaryPos(language === 'en' ? local.definitionEn ?? '' : local.translation) : '';
-  const dictionarySenses = language === 'en' ? local?.englishSenses : local?.senses;
-  const localSenses: DictionarySense[] = mode === 'word' && dictionarySenses?.length ? dictionarySenses : localDefinition ? [{ pos: local?.partOfSpeech || '', definition: localDefinition }] : [];
+  const dictionary = mode === 'word' ? selectionDictionary(local, text, result) : undefined;
+  const localDefinition = dictionary ? stripDictionaryPos(language === 'en' ? dictionary.definitionEn ?? '' : dictionary.translation) : '';
+  const dictionarySenses = language === 'en' ? dictionary?.englishSenses : dictionary?.senses;
+  const localSenses: DictionarySense[] = dictionarySenses?.length ? dictionarySenses : localDefinition ? [{ pos: dictionary?.partOfSpeech || '', definition: localDefinition }] : [];
   const contextKey = result?.translation ? normalizeDictionaryGloss(result.translation) : '';
   const exactMatch = Boolean(contextKey && result && (
     localSenses.some((sense) => normalizeDictionaryGloss(sense.definition) === contextKey)
@@ -81,19 +82,22 @@ export function ReaderCard({ selection, close, anchor, onSaved, onResult, onStat
     ? standardGroups.map((group) => ({ ...group, definitions: group.definitions.filter((sense) => normalizeDictionaryGloss(sense.definition) !== contextKey) })).filter((group) => group.definitions.length)
     : standardGroups;
   const standardDefinition = mode === 'word' && localSenses.length ? formatSenses(localSenses) : localDefinition || result?.definition;
-  const partOfSpeech = mode === 'word' ? contextSense?.pos || local?.partOfSpeech || result?.partOfSpeech : result?.partOfSpeech;
-  const phonetic = mode === 'word' ? contextSense?.phonetic || local?.phonetic || result?.phonetic : result?.phonetic;
-  const headword = expression?.text || (mode === 'word' && local?.word ? local.word : mode === 'word' ? result?.lemma || text : expressionSelection || text);
+  const partOfSpeech = result?.partOfSpeech || (mode === 'word' ? contextSense?.pos || dictionary?.partOfSpeech : undefined);
+  const phonetic = result?.phonetic || (mode === 'word' ? contextSense?.phonetic || (!result?.partOfSpeech || contextSense ? dictionary?.phonetic : undefined) : undefined);
+  const headword = expression?.text || expressionSelection || text;
+  const relatedForm = mode === 'word' ? result?.baseForm || result?.lemma : undefined;
+  const formNote = relatedForm && normalizeDictionaryWord(relatedForm) !== normalizeDictionaryWord(text) ? result?.baseForm ? t(`派生自 ${relatedForm}`, `Derived from ${relatedForm}`) : t(`原形 ${relatedForm}`, `Base form ${relatedForm}`) : '';
   useEffect(() => presentation === 'popup' && card.current ? dismissCardOnOutsidePress(card.current, close) : undefined, [close, presentation]);
   useEffect(() => {
     let active = true;
     if (mode !== 'word') { setLocal(undefined); return; }
     setLocal(undefined);
-    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'dictionary-lookup', word: result?.lemma || text })).then((response) => {
+    void Promise.resolve().then(() => chrome.runtime.sendMessage({ type: 'dictionary-lookup', word: text })).then(async (response) => {
+      if (active && !selectionDictionary(response?.entry, text, result) && result?.lemma && normalizeDictionaryWord(result.lemma) !== normalizeDictionaryWord(text)) response = await chrome.runtime.sendMessage({ type: 'dictionary-lookup', word: result.lemma });
       if (active && response?.ok && response.entry) setLocal(response.entry);
     }).catch(() => { /* Offline dictionary is optional. */ });
     return () => { active = false; };
-  }, [mode, text, result?.lemma]);
+  }, [mode, text, result?.lemma, result?.partOfSpeech]);
   useEffect(() => {
     let active = true;
     const seq = ++requestSeq.current;
@@ -187,7 +191,7 @@ export function ReaderCard({ selection, close, anchor, onSaved, onResult, onStat
   const position = { width: size.width, maxHeight: `min(${size.height}px, calc(100dvh - 24px))`, ...(anchor ? { left: Math.max(12, Math.min(anchor.left, innerWidth - size.width - 24)), top: Math.max(12, Math.min(anchor.bottom + 12, innerHeight - size.height - 12)) } : { right: 16, bottom: 16 }) };
 
   return <aside ref={card} className={`acr-card${presentation === 'panel' ? ' acr-panel' : ''}`} lang={preferences.uiLanguage} style={presentation === 'popup' ? position : undefined} role={presentation === 'popup' ? 'dialog' : 'region'} aria-label={t('上下文阅读助手', 'Context reader')} onKeyDown={(event) => { if (event.key === 'Escape') close(); }}>
-    <header className="acr-header"><div><div className="acr-title-row"><h2>{shortSelection ? headword : t('阅读助手', 'Reading assistant')}</h2>{shortSelection && (result || local) && <button type="button" className="acr-speak" onClick={() => speakEnglish(headword)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div>{mode === 'word' && phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{phonetic}</span></p>}{expression && <p className="acr-expression-meta">{expression.type.replaceAll('_', ' ')} · {t('选中', 'selected')} “{expression.selectedText}”</p>}</div><div className="acr-language" role="group" aria-label="解释语言 / Explanation language">{(['zh-CN', 'en'] as const).map((value) => <button key={value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value === 'en' ? 'EN' : '中'}</button>)}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M1.5 1.5 12.5 12.5M12.5 1.5 1.5 12.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></button></header>
+    <header className="acr-header"><div><div className="acr-title-row"><h2>{shortSelection ? headword : t('阅读助手', 'Reading assistant')}</h2>{shortSelection && (result || local) && <button type="button" className="acr-speak" onClick={() => speakEnglish(headword)} aria-label={t('朗读', 'Read aloud')} title={t('朗读', 'Read aloud')}>🔊</button>}</div>{formNote && <p className="acr-phonetic">{formNote}</p>}{mode === 'word' && phonetic && <p className="acr-phonetic" aria-label={t('美式音标', 'American pronunciation')}><span className="acr-phonetic-label">{t('美', 'US')}</span> <span lang="en-US">{phonetic}</span></p>}{expression && <p className="acr-expression-meta">{expression.type.replaceAll('_', ' ')} · {t('选中', 'selected')} “{expression.selectedText}”</p>}</div><div className="acr-language" role="group" aria-label="解释语言 / Explanation language">{(['zh-CN', 'en'] as const).map((value) => <button key={value} aria-pressed={language === value} onClick={() => setLanguage(value)}>{value === 'en' ? 'EN' : '中'}</button>)}</div><button className="acr-close" onClick={close} aria-label={t('关闭', 'Close')}><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><path d="M1.5 1.5 12.5 12.5M12.5 1.5 1.5 12.5" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg></button></header>
     <div className="acr-body" aria-busy={loading}>
       {result?.register === 'demo' && <p className="acr-demo">{t('演示内容 · 配置 API 后获取真实解释', 'Demo · Connect an API for real explanations')}</p>}
       {cached && !loading && <p className="acr-cache">{t('来自本机缓存 · 未重复请求模型', 'From local cache · no new model request')}</p>}

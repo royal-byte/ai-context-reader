@@ -1,6 +1,6 @@
 {
   "name": "ai-context-reader",
-  "version": "0.9.2",
+  "version": "0.9.3",
   "description": "Open-source, local-first context reader for English reading in Chrome and Edge.",
   "license": "MIT",
   "repository": {

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.9.3 — 2026-10-25
+
+- Keep the original selected word form in the reading-card title and pronunciation button; show a different lemma as secondary text.
+- Look up the selected form first. Only use a model-confirmed lemma fallback with a compatible contextual part of speech; never borrow the lemma's pronunciation for an inflected form.
+- Ask both explanation languages for selected-form IPA and contextual lexical headwords. Distinguish lexical adjectives/nouns such as exhausting and building from verb inflections such as went and running.
+- Preserve optional derivational baseForm metadata in favorites, backups and CSV exports; show the original form in saved-context details. Base forms never determine favorite grouping. Existing favorites remain unchanged.
+- Invalidate previous explanation caches so older lemma-pronunciation results are not reused. No new dependencies or database schema upgrade.
+- Validate with 333 automated tests, TypeScript checks and extension ZIP packaging.
+
 ## 0.9.2 — 2026-10-25
 
 - Fix document page keys when an explanation or selection prompt is open; editable fields and modified shortcuts remain protected. Covered by a Workbench interaction regression test.

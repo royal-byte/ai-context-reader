@@ -90,8 +90,8 @@ export function parseExplanation(input: string, mode?: SelectionMode, language: 
   if (isReadingMode(item.mode)) result.mode = item.mode;
   const phonetic = typeof item.phonetic === 'string' ? item.phonetic.trim() : '';
   if (/^\/[^/\r\n]{1,80}\/$/u.test(phonetic)) result.phonetic = phonetic;
-  const optionalCaps = { lemma: 200, partOfSpeech: 100, usage: 5_000, sentenceTranslation: MAX_TEXT } as const;
-  for (const key of ['lemma', 'partOfSpeech', 'usage', 'sentenceTranslation'] as const) {
+  const optionalCaps = { lemma: 200, baseForm: 200, partOfSpeech: 100, usage: 5_000, sentenceTranslation: MAX_TEXT } as const;
+  for (const key of ['lemma', 'baseForm', 'partOfSpeech', 'usage', 'sentenceTranslation'] as const) {
     if (language === 'en' && (key === 'usage' || key === 'sentenceTranslation') && typeof item[key] !== 'string') continue;
     const value = optionalText(item, key, optionalCaps[key]);
     if (value !== undefined) result[key] = value;
@@ -230,6 +230,7 @@ export function normalizeFavoriteItem(value: unknown): ReaderItem {
   if ((mode === 'word' || mode === 'phrase') && !item.definition.trim()) throw new Error('收藏缺少 definition。');
   const optional: Array<[keyof ReaderItem, string, number]> = [
     ['lemma', 'lemma', 200],
+    ['baseForm', 'baseForm', 200],
     ['partOfSpeech', 'partOfSpeech', 100],
     ['usage', 'usage', MAX_CONTEXT],
     ['sentenceTranslation', 'sentenceTranslation', MAX_TEXT],

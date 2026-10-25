@@ -36,7 +36,12 @@ The result is a compact card, not a full dictionary page.
 
 ## Features
 
-### What's new in 0.9.2
+### What's new in 0.9.3
+
+- Reading cards retain the selected word form, with a different lemma or derivational base shown as secondary text.
+- Contextual word class and selected-form pronunciation take priority over stemmed dictionary fallbacks; lexical adjectives and nouns keep their own headwords.
+
+### Included from 0.9.2
 
 - Improve PDF column reading order, dictionary-confirmed line-break word joining, and adjacent-page context completion.
 - Preserve reading position and selection after zoom; highlight saved sentences and words when returning to a PDF source.
