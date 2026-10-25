@@ -1,17 +1,18 @@
 import { readerDb } from './db';
-import type { Explanation, ReadingMode } from './types';
+import type { Explanation, SelectionMode } from './types';
 
 export const CACHE_TTL = 7 * 24 * 60 * 60 * 1_000;
 export const CACHE_MAX = 500;
-const CACHE_VERSION = 'v3';
+const CACHE_VERSION = 'v4';
 
 export async function explanationCacheKey(input: {
   endpoint: string;
   model: string;
-  mode: ReadingMode;
+  mode: SelectionMode;
   text: string;
   context: string;
   language: string;
+  expressionPolicy?: string;
 }) {
   const raw = JSON.stringify([
     CACHE_VERSION,
@@ -20,7 +21,8 @@ export async function explanationCacheKey(input: {
     input.mode,
     input.text,
     input.context,
-    input.language
+    input.language,
+    input.expressionPolicy ?? 'auto'
   ]);
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, '0')).join('');

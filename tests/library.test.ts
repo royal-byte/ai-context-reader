@@ -36,8 +36,8 @@ it('groups legacy records only in the view, retains every source and leaves exce
   expect(groupFavorites([{ ...word, kind: 'excerpt' }, { ...second, kind: 'excerpt' }])).toHaveLength(2);
   expect(word).not.toHaveProperty('contexts');
 });
-it('keeps the original word definition even when newer contexts arrive first', () => {
+it('uses the most recent variant for the summary while retaining every context', () => {
   const grouped = groupFavorites([{ ...word, id: 2, definition: '新语境释义', createdAt: 99 }, word]);
-  expect(grouped[0]!.definition).toBe('开发者');
+  expect(grouped[0]!.definition).toBe('新语境释义');
   expect(grouped[0]!.contexts[0]!.definition).toBe('新语境释义');
 });

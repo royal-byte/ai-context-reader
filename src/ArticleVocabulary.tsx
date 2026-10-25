@@ -26,19 +26,19 @@ type Props = {
 
 function NoteEditor({ entry, t, onNote }: { entry: ArticleLookup; t: Translate; onNote: (entry: ArticleLookup, note: string) => void | Promise<void> }) {
   const [value, setValue] = useState(entry.note ?? '');
-  const [status, setStatus] = useState<'saving' | 'saved' | ''>('');
+  const [status, setStatus] = useState<'saving' | 'saved' | 'error' | ''>('');
   const save = async () => {
     if (value.trim() === (entry.note ?? '').trim()) return;
     setStatus('saving');
     try {
       await Promise.resolve(onNote(entry, value));
       setStatus('saved');
-    } catch { setStatus(''); }
+    } catch { setStatus('error'); }
   };
   return <div className="article-vocab-note">
     <label>{t('我的笔记', 'My note')}<span>{value.length} / 2000</span></label>
     <textarea value={value} maxLength={2000} onChange={(event) => { setValue(event.target.value); setStatus(''); }} onBlur={() => { void save(); }} placeholder={t('我的例句：...', 'My example: …')} aria-label={t('我的笔记', 'My note')} />
-    <p>{status === 'saving' ? t('正在自动保存…', 'Saving…') : status === 'saved' ? t('已自动保存', 'Saved') : t('输入后自动保存', 'Auto-saved')}</p>
+    <p role={status === 'error' ? 'alert' : 'status'}>{status === 'error' ? t('保存失败，请重新编辑或失焦重试。', 'Could not save. Edit or leave the field to retry.') : status === 'saving' ? t('正在自动保存…', 'Saving…') : status === 'saved' ? t('已自动保存', 'Saved') : t('输入后自动保存', 'Auto-saved')}</p>
   </div>;
 }
 
@@ -70,7 +70,7 @@ export function ArticleVocabulary({ entries, open, t, onClose, onToggle, onNote 
         {expanded === entry.id && <div className="article-vocab-detail">
           {entry.result?.explanation && <><h3>{t('上下文释义', 'Meaning in context')}</h3><p>{entry.result.explanation}</p></>}
           {entry.result?.sentenceTranslation && <><h3>{t('整句翻译', 'Sentence translation')}</h3><p>{entry.result.sentenceTranslation}</p></>}
-          <h3>{t('原句', 'Source sentence')}</h3><blockquote>{entry.selection.context}</blockquote>
+          {entry.result?.bridge && <><h3>{t('为什么是这个意思', 'Why This Sense')}</h3><p>{entry.result.bridge}</p></>}
           {entry.result && <NoteEditor entry={entry} t={t} onNote={onNote} />}
         </div>}
       </div>) : <p className="article-vocab-empty">{t('没有匹配的词。', 'No matching words.')}</p>}</div>

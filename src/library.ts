@@ -11,37 +11,52 @@ export type FavoriteInput = Pick<ReaderItem, 'selectedText' | 'sourceUrl'> & Par
 export type FavoriteState = 'new' | 'context' | 'duplicate';
 
 export function contextKey(item: FavoriteInput): string {
-  return JSON.stringify([item.documentId || item.sourceUrl, item.pageNumber ?? null, cleanSelection(item.sourceSentence || sourceSentence(item.selectedText, item.context ?? '') || item.selectedText)]);
+  return JSON.stringify([item.documentId || item.sourceUrl, item.pageNumber ?? null, item.sourcePosition ?? null, cleanSelection(item.sourceSentence || sourceSentence(item.selectedText, item.context ?? '') || item.selectedText)]);
 }
 
-export function favoriteKey(item: FavoriteInput): string {
+export const savedLanguage = (item: Pick<ReaderItem, 'explanationLanguage'>) => item.explanationLanguage === 'zh-CN' || item.explanationLanguage === 'en' ? item.explanationLanguage : 'unknown';
+export const expressionText = (item: Partial<ReaderItem>) => item.expression?.confidence === 'high' ? item.expression.text : undefined;
+export const itemTerm = (item: FavoriteInput) => expressionText(item) || ((item.mode ?? inferReadingMode(item.selectedText)) === 'word' ? item.lemma || item.selectedText : item.selectedText);
+
+export function contentKey(item: FavoriteInput): string {
   const kind = collectionKind(item);
   const mode = item.mode ?? inferReadingMode(item.selectedText);
-  const text = kind === 'vocabulary' && mode === 'word' ? item.lemma || item.selectedText : item.selectedText;
-  return JSON.stringify([kind, cleanSelection(text).toLowerCase(), ...(kind === 'excerpt' ? [contextKey(item)] : [])]);
+  // Direct phrase selections and expression detection refer to the same canonical unit.
+  return JSON.stringify([kind, kind === 'excerpt' ? 'excerpt' : expressionText(item) ? 'phrase' : mode, cleanSelection(itemTerm(item)).toLowerCase()]);
 }
+
+export const reviewKey = (item: FavoriteInput) => JSON.stringify(['review', contentKey(item)]);
+export const libraryGroupKey = (item: FavoriteInput) => collectionKind(item) === 'excerpt' ? JSON.stringify([contentKey(item), contextKey(item)]) : contentKey(item);
+export const variantKey = (item: FavoriteInput) => JSON.stringify([contentKey(item), contextKey(item), savedLanguage(item), ...(item.legacyVariantId ? [item.legacyVariantId] : [])]);
+export const favoriteKey = variantKey;
 
 export function favoriteState(items: ReaderItem[], item: FavoriteInput): FavoriteState {
-  const matches = items.filter((saved) => favoriteKey(saved) === favoriteKey(item));
-  return matches.some((saved) => contextKey(saved) === contextKey(item)) ? 'duplicate' : matches.length ? 'context' : 'new';
+  if (items.some((saved) => variantKey(saved) === variantKey(item))) return 'duplicate';
+  return items.some((saved) => contentKey(saved) === contentKey(item) && contextKey(saved) !== contextKey(item)) ? 'context' : 'new';
 }
 
-export function groupFavorites(items: ReaderItem[]) {
+export function groupFavorites(items: ReaderItem[], language?: 'zh-CN' | 'en') {
   const groups = new Map<string, ReaderItem & { contexts: ReaderItem[] }>();
   for (const item of items) {
-    const key = favoriteKey(item);
+    const key = libraryGroupKey(item);
     const existing = groups.get(key);
     if (existing) {
       existing.contexts.push(item);
-      if (item.createdAt < existing.createdAt) groups.set(key, { ...item, contexts: existing.contexts });
+      const preferred = language && savedLanguage(item) === language && savedLanguage(existing) !== language;
+      const samePreference = !language || (savedLanguage(item) === language) === (savedLanguage(existing) === language);
+      if (preferred || (samePreference && item.createdAt > existing.createdAt)) groups.set(key, { ...item, contexts: existing.contexts });
     } else groups.set(key, { ...item, contexts: [item] });
   }
-  return [...groups.values()];
+  return [...groups.values()].map((group) => {
+    const reviewed = group.contexts.reduce((best, item) => (item.lastReviewedAt ?? 0) > (best.lastReviewedAt ?? 0) ? item : best, group);
+    if (reviewed === group) return group;
+    return { ...group, dueAt: reviewed.dueAt, intervalDays: reviewed.intervalDays, ease: reviewed.ease, reviewCount: reviewed.reviewCount, lapseCount: reviewed.lapseCount, lastReviewedAt: reviewed.lastReviewedAt, status: reviewed.status };
+  });
 }
 
 export function relatedVocabulary(item: ReaderItem, items: ReaderItem[]) {
   const groups = groupFavorites(items.filter((record) => collectionKind(record) === 'vocabulary'));
-  const target = groups.find((group) => favoriteKey(group) === favoriteKey(item));
+  const target = groups.find((group) => contentKey(group) === contentKey(item));
   if (!target) return [];
   const source = (record: ReaderItem) => record.documentId || record.sourceUrl;
   const sentence = (record: ReaderItem) => cleanSelection(record.sourceSentence || sourceSentence(record.selectedText, record.context));
@@ -70,7 +85,7 @@ export function relatedVocabulary(item: ReaderItem, items: ReaderItem[]) {
     if (!evidence.some((short) => source(short) === source(record) && short.pageNumber === record.pageNumber && record.sourceSentence!.endsWith(short.sourceSentence!) && /\s$/.test(record.sourceSentence!.slice(0, -short.sourceSentence!.length)))) evidence.push(record);
   }
   // ponytail: scan saved sentences only for the expanded card, O(vocabulary × sentences); add a local inverted index if libraries grow large.
-  return groups.filter((group) => favoriteKey(group) !== favoriteKey(target)).flatMap((group) => {
+  return groups.filter((group) => contentKey(group) !== contentKey(target)).flatMap((group) => {
     const containsRelated = matcher(group.contexts);
     const shared = evidence.filter((record) => containsRelated(record.sourceSentence!));
     const sources = new Set(group.contexts.map(source).filter(Boolean));

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { formatPartOfSpeech } from './library';
+import { formatPartOfSpeech, itemTerm, savedLanguage } from './library';
 import { formatInterval, reviewSnapshot, scheduleReview, type ReviewRating, type ReviewSchedule, type ReviewSnapshot } from './srs';
 import type { ReaderItem } from './types';
 
@@ -146,7 +146,7 @@ export function ReviewPage({ due, dueCount, dueTotal, newCount, newTotal, langua
     return <section className="review-page"><div className="review-empty"><span aria-hidden="true">✓</span><h2>{t('今天没有到期词。', 'Nothing due today.')}</h2><p>{t('新收藏的词会自动进入复习队列；明天再来，或者去生词库看看。', 'New words enter the review queue automatically. Come back tomorrow, or browse your vocabulary.')}</p><button className="primary-button" onClick={onGoLibrary}>{t('去生词库', 'Open vocabulary')}</button></div></section>;
   }
 
-  const term = current.lemma || current.selectedText;
+  const term = itemTerm(current);
   const sentence = current.sourceSentence || current.context;
   const parts = cloze(sentence, [current.lemma || '', current.selectedText]);
   const preview = (rating: ReviewRating) => formatInterval(scheduleReview(current, rating).intervalDays, language);
@@ -161,6 +161,7 @@ export function ReviewPage({ due, dueCount, dueTotal, newCount, newTotal, langua
     <article className="review-card">
       <p className="review-kicker">{current.reviewCount ? t('到期复习', 'Due review') : t('新词', 'New word')}</p>
       <h3 className="review-word">{term}</h3>
+      <p className="review-language">{savedLanguage(current) === 'unknown' ? t('旧版 · 语言未确认', 'Legacy · language unconfirmed') : savedLanguage(current) === 'en' ? 'English' : '中文'}</p>
       {current.phonetic && <p className="review-phonetic"><span aria-hidden="true">/</span>{current.phonetic.replace(/^\/|\/$/g, '')}<span aria-hidden="true">/</span></p>}
       {current.partOfSpeech && <p className="review-pos">{formatPartOfSpeech(current.partOfSpeech)}</p>}
       {sentence && <blockquote className="review-sentence">{parts.match ? <>{parts.before}<mark>{parts.match}</mark>{parts.after}</> : <>{sentence}<span className="review-context-hint"> · {t('注意这个词在句中的意思', 'notice the word in context')}</span></>}</blockquote>}

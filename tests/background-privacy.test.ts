@@ -95,7 +95,7 @@ it('uses the Chinese translation when a phrase definition comes back in English'
 
 it('defaults to no query log and strips unrelated context and source metadata from model calls', async () => {
   expect((await send()).ok).toBe(true);
-  expect(requestExplanation).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'test-only-key' }), 'target', 'This target matters.', 'word', 'zh-CN', undefined, expect.objectContaining({ selection: 'target', sentence: 'This target matters.' }));
+  expect(requestExplanation).toHaveBeenCalledWith(expect.objectContaining({ apiKey: 'test-only-key' }), 'target', 'This target matters.', 'word', 'zh-CN', undefined, expect.objectContaining({ selection: 'target', sentence: 'This target matters.' }), 'auto');
   expect(recordQuery).not.toHaveBeenCalled();
 });
 
@@ -115,7 +115,7 @@ it('only logs successful explicit queries when enabled, keeping source informati
   preferences = { ...preferences, saveQueryHistory: true, explanationLanguage: 'en' };
   expect((await send()).ok).toBe(true);
   expect(recordQuery).toHaveBeenCalledWith({ text: message.text, sourceUrl: message.sourceUrl, sourceTitle: message.sourceTitle, pageNumber: undefined, createdAt: expect.any(Number) });
-  expect(requestExplanation).toHaveBeenCalledWith(expect.any(Object), 'target', 'This target matters.', 'word', 'en', undefined, expect.objectContaining({ selection: 'target', sentence: 'This target matters.' }));
+  expect(requestExplanation).toHaveBeenCalledWith(expect.any(Object), 'target', 'This target matters.', 'auto', 'en', undefined, expect.objectContaining({ selection: 'target', sentence: 'This target matters.' }), 'auto');
 });
 
 it('never logs a failed model request', async () => {

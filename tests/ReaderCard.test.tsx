@@ -19,7 +19,7 @@ it.each([
   expect(markup).not.toContain(context);
   expect(markup).not.toContain('原句');
   expect(markup.replace(/<footer[\s\S]*?<\/footer>/, '')).not.toMatch(/单词|短语|句子|段落/);
-  expect(markup).not.toContain('aria-pressed');
+  expect(markup).toContain('aria-label="解释语言 / Explanation language"');
   expect(markup).toContain('支持单词、短语、句子和段落，自动分类保存。');
   expect(markup).toContain(text.endsWith('.') ? '保存为摘录' : '保存到生词库');
   if (text.endsWith('.')) expect(markup).not.toContain(text);

@@ -88,8 +88,8 @@ export function formatInterval(days: number, language: 'zh-CN' | 'en' = 'zh-CN')
   return language === 'en' ? `${years} yr` : `${years} 年`;
 }
 
-export function dueReviewQueue(items: ReaderItem[], now = Date.now(), newLimit = 20, dueLimit = 100) {
-  const groups = groupFavorites(items.filter((item) => collectionKind(item) === 'vocabulary'));
+export function dueReviewQueue(items: ReaderItem[], now = Date.now(), newLimit = 20, dueLimit = 100, language?: 'zh-CN' | 'en') {
+  const groups = groupFavorites(items.filter((item) => collectionKind(item) === 'vocabulary'), language);
   const due: ReaderItem[] = [];
   const fresh: ReaderItem[] = [];
   for (const item of groups) {

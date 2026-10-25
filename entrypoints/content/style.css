@@ -116,3 +116,11 @@
 .acr-error button { border: 1px solid #d7bbb6; border-radius: 5px; color: #984a42; background: #fff; margin-top: 8px; padding: 3px 12px; }
 .acr-card button:focus-visible, .acr-card summary:focus-visible { outline: 2px solid var(--acr-accent); outline-offset: 3px; }
 @media (max-height: 400px) { .acr-header { padding-top: 10px; padding-bottom: 8px; } .acr-footer { padding-top: 8px; padding-bottom: 10px; } }
+.acr-header > div:first-child { min-width: 0; flex: 1; }
+.acr-language { display: flex; align-self: flex-start; gap: 2px; margin-right: 8px; }
+.acr-language button { min-width: 30px; min-height: 30px; border: 1px solid #d9e3d8; background: #fff; color: #315a46; border-radius: 5px; cursor: pointer; }
+.acr-language button[aria-pressed=true] { background: #315a46; color: #fff; }
+.acr-expression-meta { font-size: 12px; color: #667064; margin: 4px 0; }
+.acr-bridge, .acr-transfer, .acr-model-needed { margin-top: 14px; padding: 12px; background: #f2f6ef; border-radius: 8px; }
+.acr-bridge p, .acr-transfer li { font-size: 14px; line-height: 1.6; }
+.acr-model-needed button, .acr-expression-override { padding: 7px 10px; margin: 8px 6px 0 0; color: #315a46; border: 1px solid #cbd5c6; background: #fff; border-radius: 6px; cursor: pointer; }

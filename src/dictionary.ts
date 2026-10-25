@@ -1,6 +1,7 @@
 export type DictionarySense = {
   pos: string;
   definition: string;
+  definitionEn?: string;
   phonetic?: string;
 };
 
@@ -8,6 +9,8 @@ export type DictionaryEntry = {
   word: string;
   phonetic: string;
   translation: string;
+  definitionEn?: string;
+  englishSenses?: DictionarySense[];
   partOfSpeech?: string;
   senses?: DictionarySense[];
 };
@@ -156,11 +159,13 @@ export function loadDictionary() {
       if (!response.ok) throw new Error('Dictionary unavailable.');
       return response.json() as Promise<string[][]>;
     })
-    .then((rows) => new Map(rows.map(([word, phonetic, translation, partOfSpeech]) => {
+    .then((rows) => new Map(rows.map(([word, phonetic, translation, partOfSpeech, definitionEn]) => {
       const normalizedPart = partOfSpeech || undefined;
       const senses = withPhonetics(word!, parseDictionarySenses(translation ?? '', normalizedPart));
       return [word!, {
-        word: word!, phonetic: phonetic ?? '', translation: translation ?? '', partOfSpeech: normalizedPart, senses
+        word: word!, phonetic: phonetic ?? '', translation: translation ?? '', partOfSpeech: normalizedPart, senses,
+        definitionEn: definitionEn || undefined,
+        englishSenses: definitionEn ? withPhonetics(word!, parseDictionarySenses(definitionEn, normalizedPart).map((sense) => ({ ...sense, definitionEn: sense.definition }))) : []
       }];
     })))
     .catch((error) => { entries = undefined; throw error; });

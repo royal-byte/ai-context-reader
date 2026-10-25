@@ -2,9 +2,9 @@ import { createRoot, type Root } from 'react-dom/client';
 import { useEffect, useState } from 'react';
 import { SelectionReader, selectionIntent } from '../src/SelectionReader';
 import { ArticleVocabulary, type ArticleLookup, type ArticleSelection } from '../src/ArticleVocabulary';
-import { contextForRange, contextPacketForRange } from '../src/selection';
+import { contextForRange, contextPacketForRange, sourcePositionForRange } from '../src/selection';
 import { isLikelyEnglish } from '../src/language';
-import { cleanSelection, inferReadingMode, MAX_SELECTION_LENGTH } from '../src/reading';
+import { cleanSelection, inferReadingMode, MAX_SELECTION_LENGTH, sourceSentence } from '../src/reading';
 import type { ContextPacket, Explanation } from '../src/types';
 import type { FavoriteState } from '../src/library';
 import {
@@ -13,7 +13,7 @@ import {
 } from '../src/preferences';
 import './content/style.css';
 
-type Selection = { text: string; context: string; packet?: ContextPacket; rect: DOMRect; immediate: boolean; confirmed?: boolean };
+type Selection = { text: string; context: string; packet?: ContextPacket; rect: DOMRect; immediate: boolean; confirmed?: boolean; sourcePosition?: string };
 function selectionAt(immediate: boolean): Selection | null {
   const selection = window.getSelection();
   if (!selection || selection.rangeCount === 0) return null;
@@ -25,7 +25,7 @@ function selectionAt(immediate: boolean): Selection | null {
   if (text.length > MAX_SELECTION_LENGTH) return { text, context: '', rect: range.getBoundingClientRect(), immediate: false };
   const { context } = contextForRange(range, text);
   const packet = contextPacketForRange(range, text, 'web');
-  return { text, context, packet, rect: range.getBoundingClientRect(), immediate };
+  return { text, context, packet, rect: range.getBoundingClientRect(), immediate, sourcePosition: sourcePositionForRange(range) };
 }
 
 export default defineContentScript({ matches: ['http://*/*', 'https://*/*'], cssInjectionMode: 'ui', async main(ctx) {
@@ -128,6 +128,7 @@ function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => vo
       rect: value.rect,
       immediate: value.immediate,
       confirmed: value.confirmed
+      ,sourcePosition: value.sourcePosition
     };
     setLookups((previous) => {
       const existing = previous.find((entry) => entry.text === text);
@@ -184,16 +185,18 @@ function ContentApp({ onReady }: { onReady: (setter: (s: Selection | null) => vo
         ...entry.result,
         selectedText: entry.text,
         context: entry.selection.context,
-        sourceSentence: entry.selection.context,
+        sourceSentence: sourceSentence(entry.text, entry.selection.context),
         sourceUrl: entry.selection.sourceUrl,
         sourceTitle: entry.selection.sourceTitle,
+        sourcePosition: entry.selection.sourcePosition,
         note: note.trim()
       }
     });
-    if (response?.ok) updateLookup(entry.text, { note: note.trim(), saved: true });
+    if (!response?.ok) throw new Error(response?.error ?? 'Could not save note.');
+    updateLookup(entry.text, { note: note.trim(), saved: true });
   };
   return <>
-    {current && <SelectionReader key={`${current.text}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, packet: current.packet, sourceUrl: location.href, sourceTitle: document.title }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} onResult={resultForCurrent} onState={stateForCurrent} onSaved={savedForCurrent} />}
+    {current && <SelectionReader key={`${current.text}\n${current.sourcePosition}\n${current.context}\n${current.immediate}\n${current.confirmed}`} selection={{ text: current.text, context: current.context, packet: current.packet, sourceUrl: location.href, sourceTitle: document.title, sourcePosition: current.sourcePosition }} anchor={current.rect} immediate={current.immediate} confirmed={current.confirmed} preferences={preferences} close={() => setCurrent(null)} onResult={resultForCurrent} onState={stateForCurrent} onSaved={savedForCurrent} />}
     {lookups.length > 0 && <ArticleVocabulary entries={lookups} open={drawerOpen} t={t} onClose={() => setDrawerOpen(false)} onToggle={() => setDrawerOpen(true)} onNote={saveLookupNote} />}
   </>;
 }

@@ -60,7 +60,8 @@ export function SettingsForm({ onSaved, onCancel }: { onSaved: (preferences: Rea
     <fieldset disabled={loading || busy}>
       <section className="settings-group"><h3>{t('基础', 'Basics')}</h3>
         <div className="settings-columns"><label>{t('界面语言', 'Interface language')}<select value={preferences.uiLanguage} onChange={(event) => setPreferences({ ...preferences, uiLanguage: event.target.value as 'zh-CN' | 'en' })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label>
-        <label>{t('默认释义语言', 'Explanation language')}<select value={preferences.explanationLanguage} onChange={(event) => setPreferences({ ...preferences, explanationLanguage: event.target.value as 'zh-CN' | 'en' })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label></div>
+        <label>{t('解释语言', 'Explanation language')}<select value={preferences.explanationLanguage} onChange={(event) => setPreferences({ ...preferences, explanationLanguage: event.target.value as 'zh-CN' | 'en' })}><option value="zh-CN">简体中文</option><option value="en">English</option></select></label></div>
+        <p className="hint">{t('English 模式使用离线英英词典释义，AI 提供语境义和英文改写；中文模式使用离线英汉词典。未配置密钥时仍可查看离线单词释义。', 'English mode uses offline ECDICT English definitions and AI for in-context meaning and plain-English paraphrases. Chinese mode uses the offline Chinese dictionary. Word definitions work without an API key.')}</p>
       </section>
       <section className="settings-group"><h3>{t('阅读', 'Reading')}</h3>
         <label>{t('阅读触发方式', 'Query trigger')}<select value={preferences.trigger} onChange={(event) => setPreferences({ ...preferences, trigger: event.target.value as 'quick' | 'confirm' })}><option value="quick">{t('快捷查词：双击单词直接查，拖选后确认', 'Quick lookup: double-click words; confirm drag selections')}</option><option value="confirm">{t('始终确认：所有选区点击解释后才查询', 'Always confirm: click Explain for every selection')}</option></select></label>

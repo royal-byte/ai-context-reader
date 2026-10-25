@@ -1,5 +1,5 @@
 import type { ReaderItem } from './types';
-import { collectionKind } from './library';
+import { collectionKind, itemTerm, savedLanguage } from './library';
 import { stripDefinitionPos } from './dictionary';
 
 const CSV_COLUMNS = [
@@ -22,7 +22,8 @@ const CSV_COLUMNS = [
   'pageNumber',
   'status',
   'kind',
-  'createdAt'
+  'createdAt',
+  'Language', 'Definition', 'In Context', 'Paraphrase', 'Expression', 'Expression Type', 'Selected Word', 'bridge', 'transfer', 'sourcePosition'
 ] as const;
 
 const clean = (value: unknown) =>
@@ -35,7 +36,7 @@ function csvCell(value: unknown) {
 export function toCsv(records: ReaderItem[]) {
   const rows = records.map((item) =>
     [
-      item.lemma || item.selectedText,
+      itemTerm(item),
       item.lemma,
       item.phonetic,
       item.partOfSpeech,
@@ -54,7 +55,12 @@ export function toCsv(records: ReaderItem[]) {
       item.pageNumber,
       item.status,
       collectionKind(item),
-      item.createdAt ? new Date(item.createdAt).toISOString() : ''
+      item.createdAt ? new Date(item.createdAt).toISOString() : '',
+      savedLanguage(item),
+      savedLanguage(item) === 'en' ? item.definition : '',
+      savedLanguage(item) === 'en' && collectionKind(item) === 'vocabulary' ? item.translation : '',
+      savedLanguage(item) === 'en' && collectionKind(item) === 'excerpt' ? item.translation : '',
+      item.expression?.text, item.expression?.type, item.expression?.selectedText, item.bridge, item.transfer?.join(' | '), item.sourcePosition
     ]
       .map(csvCell)
       .join(',')
@@ -88,17 +94,19 @@ function ankiTags(item: ReaderItem) {
 }
 
 /**
- * Tab-separated text that Anki imports directly: Front, Back, Tags.
+ * Tab-separated text: Front, Back, Tags, Language, Expression, Expression Type, Selected Word.
  * Newlines are flattened because Anki treats a line as one note.
  */
 export function toAnkiTsv(records: ReaderItem[]) {
   return records
     .map((item) => {
-      const front = ankiField(item.lemma || item.selectedText);
+      const front = ankiField(itemTerm(item));
       const back = [
         stripDefinitionPos(item.definition),
         item.translation,
         item.explanation,
+        item.bridge,
+        item.transfer?.join(' · '),
         item.sourceSentence || item.context,
         ...(item.examples ?? []),
         item.note,
@@ -109,7 +117,7 @@ export function toAnkiTsv(records: ReaderItem[]) {
         .filter(Boolean)
         .map(ankiHtml)
         .join('<br>');
-      return [front, back, ankiField(ankiTags(item))].join('\t');
+      return [front, back, ankiField(ankiTags(item)), savedLanguage(item), ankiField(item.expression?.text), ankiField(item.expression?.type), ankiField(item.expression?.selectedText)].join('\t');
     })
     .join('\n');
 }

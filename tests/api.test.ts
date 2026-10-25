@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { requestExplanation } from '../src/api';
 import { API_PRESETS, providerForEndpoint, selectApiProvider, type ApiProvider } from '../src/api-settings';
 
-const explanation = { definition: '能够恢复的', translation: '有韧性的', explanation: '这里指系统故障后恢复的能力。', examples: ['A resilient system recovers quickly.'], lemma: 'resilient', partOfSpeech: '形容词', phonetic: '/rɪˈzɪljənt/' };
+const explanation = { definition: '能够恢复的', translation: '有韧性的', explanation: '这里指系统故障后恢复的能力。', examples: ['A resilient system recovers quickly.'], lemma: 'resilient', partOfSpeech: '形容词', phonetic: '/rɪˈzɪljənt/', explanationLanguage: 'zh-CN' };
 const response = () => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(explanation) } }] }));
 afterEach(() => vi.unstubAllGlobals());
 
@@ -157,6 +157,7 @@ describe('connection failures', () => {
 
   it('rejects malformed or truncated model output', async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: '{}' } }] })))
       .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{' } }] })));
     vi.stubGlobal('fetch', fetchMock);
     await expect(requestExplanation(settings, 'text', 'context')).rejects.toThrow('definition');

@@ -213,3 +213,18 @@
 .pdf-outline-body ul { list-style: none; margin: 0; padding-left: 10px; } .pdf-outline-body li button { width: 100%; padding: 6px 8px; border: 0; border-radius: 5px; background: transparent; color: #344c3c; font-size: 13px; line-height: 1.45; text-align: left; } .pdf-outline-body li button:hover { background: #f1f5eb; }
 .night-toggle { min-height: 36px; min-width: 36px; border: 1px solid #cbd5c6; border-radius: 6px; background: #fff; color: #36543d; font-size: 18px; } .night-toggle.active { background: #315a46; color: #fff; }
 .reading-viewport.night { background: #151a16; } .reading-viewport.night .pdf-paper, .reading-viewport.night .epub-paper { filter: invert(1) hue-rotate(180deg); } .reading-viewport.night .page-loading, .reading-viewport.night .scan-notice { color: #c5cec2; }
+.variant-tabs, .language-badges { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
+.variant-tabs button { padding: 7px 12px; border: 1px solid #cbd5c6; border-radius: 6px; color: #315a46; background: #fff; cursor: pointer; }
+.variant-tabs button[aria-pressed=true] { background: #315a46; color: #fff; }
+.language-badges span { display: inline-block; padding: 1px 6px; border-radius: 4px; background: #edf3e9; color: #315a46; font-size: 12px; }
+.variant-column { min-width: 0; overflow-wrap: anywhere; }
+.variant-column > h3 { font-size: 14px; color: #667064; }
+.pdf-source-highlight { position: absolute; inset: 0; pointer-events: none; z-index: 2; animation: pdf-source-fade 4.5s ease-out forwards; }
+.pdf-stage > .page-loading { position: absolute; top: 0; left: 32px; z-index: 3; background: #fafbf8e8; border-radius: 6px; }
+.reading-viewport:has(.pdf-paper) { overflow-anchor: none; }
+.pdf-source-highlight > span { position: absolute; border-radius: 2px; }
+.pdf-source-sentence { background: #ffd85a66; }
+.pdf-source-word { background: #f5b72c88; outline: 1px solid #b77d20; }
+@keyframes pdf-source-fade { 0%, 65% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .pdf-source-highlight { animation: none; } }
+@media (min-width: 900px) { .comparing .variant-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; } }

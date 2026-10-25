@@ -1,5 +1,6 @@
 import type { ReaderItem } from './types';
-import { collectionKind, contextKey, favoriteKey } from './library';
+import { collectionKind, contextKey, favoriteKey, savedLanguage } from './library';
+import { explanationExtras, normalizeSavedLanguage, normalizePdfAnchor } from './validation';
 import { cleanSelection, isReadingMode } from './reading';
 
 export const MAX_BACKUP_BYTES = 20 * 1024 * 1024;
@@ -34,6 +35,12 @@ export function parseBackup(text: string): ReaderItem[] {
     };
     // ponytail: explicitly copy collection fields, never imported IDs, settings, keys or unknown properties; keep legacy mode-specific fields optional.
     const item: ReaderItem = { uniqueKey: '', selectedText, sourceUrl, sourceTitle: string('sourceTitle', 2000), context: string('context'), createdAt: record.createdAt as number, definition: string('definition'), translation: string('translation'), explanation: string('explanation'), examples: list('examples') ?? [] };
+    if (record.explanationLanguage !== undefined && !['zh-CN', 'en', 'unknown'].includes(String(record.explanationLanguage))) return invalid('explanationLanguage');
+    item.explanationLanguage = normalizeSavedLanguage(record.explanationLanguage);
+    try { item.pdfAnchor = normalizePdfAnchor(record.pdfAnchor); } catch { return invalid('pdfAnchor'); }
+    if (item.pdfAnchor && !record.documentId) return invalid('pdfAnchor');
+    Object.assign(item, explanationExtras(record));
+    if (record.expression !== undefined && !item.expression) return invalid('expression');
     if (record.mode !== undefined) { if (!isReadingMode(record.mode)) return invalid('mode'); item.mode = record.mode; }
     if (record.kind !== undefined && !['vocabulary', 'excerpt'].includes(record.kind as string)) return invalid('kind');
     item.kind = collectionKind({ ...item, kind: record.kind as ReaderItem['kind'] });
@@ -41,7 +48,7 @@ export function parseBackup(text: string): ReaderItem[] {
       if (!['new', 'reviewing', 'mastered'].includes(record.status as string)) return invalid('status');
       if (item.kind === 'vocabulary') item.status = record.status as ReaderItem['status'];
     }
-    for (const key of ['sourceSentence', 'lemma', 'phonetic', 'partOfSpeech', 'usage', 'sentenceTranslation', 'register', 'documentId', 'note'] as const) if (record[key] !== undefined) item[key] = string(key);
+    for (const key of ['sourceSentence', 'lemma', 'phonetic', 'partOfSpeech', 'usage', 'sentenceTranslation', 'register', 'documentId', 'note', 'sourcePosition', 'legacyVariantId'] as const) if (record[key] !== undefined) item[key] = string(key, key === 'note' ? 2000 : 20_000);
     if (item.documentId && sourceUrl !== `local-pdf:${item.documentId}`) return invalid('documentId');
     if (record.pageNumber !== undefined) {
       if (!Number.isSafeInteger(record.pageNumber) || (record.pageNumber as number) < 1) return invalid('pageNumber');
@@ -66,7 +73,7 @@ export function parseBackup(text: string): ReaderItem[] {
 
 export function planRestore(existing: ReaderItem[], incoming: ReaderItem[]) {
   const identity = (item: ReaderItem) => JSON.stringify([favoriteKey(item), contextKey(item)]);
-  const selectionIdentity = (item: ReaderItem) => JSON.stringify([collectionKind(item), cleanSelection(item.selectedText).toLowerCase(), contextKey(item)]);
+  const selectionIdentity = (item: ReaderItem) => JSON.stringify([collectionKind(item), cleanSelection(item.selectedText).toLowerCase(), contextKey(item), savedLanguage(item), item.expression?.confidence === 'high' ? item.expression.text : '', item.legacyVariantId ?? '']);
   const seen = new Set(existing.map(identity));
   const selections = new Set(existing.map(selectionIdentity));
   const additions: ReaderItem[] = [];

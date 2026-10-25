@@ -1,4 +1,4 @@
-import type { Explanation, ReaderItem, ReadingMode } from './types';
+import type { Explanation, ReaderItem, ReadingMode, SelectionMode, ExplanationLanguage, SavedLanguage, ExpressionInfo, MeaningRelation, PdfAnchor } from './types';
 import { cleanSelection, inferReadingMode, isReadingMode, MAX_SELECTION_LENGTH, sourceSentence } from './reading';
 import { collectionKind, type FavoriteInput } from './library';
 
@@ -55,32 +55,60 @@ function explanationExamples(item: Record<string, unknown>): string[] {
     .slice(0, 5);
 }
 
-export function parseExplanation(input: string, mode?: ReadingMode): Explanation {
+export function normalizeSavedLanguage(value: unknown): SavedLanguage {
+  return value === 'zh-CN' || value === 'en' ? value : 'unknown';
+}
+
+/** Whitelist optional model/import fields at both trust boundaries. */
+export function explanationExtras(item: Record<string, unknown>): Pick<Explanation, 'relation' | 'bridge' | 'transfer' | 'expression'> {
+  const result: Pick<Explanation, 'relation' | 'bridge' | 'transfer' | 'expression'> = {};
+  if (['specialization', 'metaphor', 'collocation', 'register', 'distinct'].includes(String(item.relation))) result.relation = item.relation as MeaningRelation;
+  if (typeof item.bridge === 'string' && item.bridge.length <= 2000) result.bridge = item.bridge.trim();
+  if (Array.isArray(item.transfer)) result.transfer = item.transfer.filter((s): s is string => typeof s === 'string' && s.length <= 200).slice(0, 3);
+  const value = item.expression;
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const e = value as Record<string, unknown>;
+    if (typeof e.text === 'string' && e.text.trim() && e.text.length <= 200 && e.text.trim().split(/\s+/).length > 1 && typeof e.selectedText === 'string' && e.selectedText.length <= 200 && ['phrasal_verb', 'idiom', 'collocation', 'compound', 'prepositional_phrase'].includes(String(e.type)) && ['high', 'medium', 'low'].includes(String(e.confidence))) {
+      result.expression = { text: cleanSelection(e.text), selectedText: e.selectedText, type: e.type as ExpressionInfo['type'], confidence: e.confidence as ExpressionInfo['confidence'] };
+      if (typeof e.selectedRole === 'string' && e.selectedRole.length <= 100) result.expression.selectedRole = e.selectedRole;
+    }
+  }
+  return result;
+}
+
+export function parseExplanation(input: string, mode?: SelectionMode, language: ExplanationLanguage = 'zh-CN'): Explanation {
   const value = parseJsonObject(input);
   if (!value || typeof value !== 'object') throw new Error('API 返回的不是对象。');
   const item = value as Record<string, unknown>;
-  const definition = explanationText(item, 'definition');
+  const actualMode = isReadingMode(item.mode) ? item.mode : mode === 'auto' ? undefined : mode;
+  if (mode === 'auto' && !actualMode) throw new Error('API 返回缺少 mode。');
+  const definition = language === 'en' && (actualMode === 'sentence' || actualMode === 'paragraph') ? optionalText(item, 'definition') ?? '' : explanationText(item, 'definition');
   const translation = explanationText(item, 'translation');
-  const explanation = explanationText(item, 'explanation');
+  const explanation = language === 'en' ? typeof item.explanation === 'string' ? optionalText(item, 'explanation') ?? '' : '' : explanationText(item, 'explanation');
   const examples = explanationExamples(item);
-  const result: Explanation = { definition, translation, explanation, examples, register: optionalText(item, 'register', 100) };
-  const actualMode = isReadingMode(item.mode) ? item.mode : mode;
+  const result: Explanation = { definition, translation, explanation, examples, register: optionalText(item, 'register', 100), ...explanationExtras(item), explanationLanguage: language };
   if (isReadingMode(item.mode)) result.mode = item.mode;
   const phonetic = typeof item.phonetic === 'string' ? item.phonetic.trim() : '';
   if (/^\/[^/\r\n]{1,80}\/$/u.test(phonetic)) result.phonetic = phonetic;
   const optionalCaps = { lemma: 200, partOfSpeech: 100, usage: 5_000, sentenceTranslation: MAX_TEXT } as const;
   for (const key of ['lemma', 'partOfSpeech', 'usage', 'sentenceTranslation'] as const) {
+    if (language === 'en' && (key === 'usage' || key === 'sentenceTranslation') && typeof item[key] !== 'string') continue;
     const value = optionalText(item, key, optionalCaps[key]);
     if (value !== undefined) result[key] = value;
   }
   for (const key of ['structure', 'keyPoints'] as const) {
+    if (language === 'en') continue;
     const value = stringList(item, key, 10);
     if (value !== undefined) result[key] = value;
   }
-  const required = actualMode === 'word' ? ['lemma', 'partOfSpeech'] as const : actualMode === 'phrase' ? ['usage'] as const : [];
+  const required = actualMode === 'word' ? ['lemma', 'partOfSpeech'] as const : actualMode === 'phrase' && language === 'zh-CN' ? ['usage'] as const : [];
   for (const key of required) if (!result[key]?.trim()) throw new Error(`API 返回缺少 ${key}。请重试。`);
-  if (actualMode === 'sentence' && !result.structure?.length) throw new Error('API 返回缺少句子结构。请重试。');
-  if (actualMode === 'paragraph' && !result.keyPoints?.length) throw new Error('API 返回缺少段落要点。请重试。');
+  if (language === 'zh-CN' && actualMode === 'sentence' && !result.structure?.length) throw new Error('API 返回缺少句子结构。请重试。');
+  if (language === 'zh-CN' && actualMode === 'paragraph' && !result.keyPoints?.length) throw new Error('API 返回缺少段落要点。请重试。');
+  if (language === 'en') {
+    const fields = [result.definition, result.translation, result.explanation, result.usage, result.bridge, result.register, result.sentenceTranslation, ...(result.structure ?? []), ...(result.keyPoints ?? []), ...(result.transfer ?? [])];
+    if (fields.some((field) => field && /\p{Script=Han}/u.test(field))) throw new Error('English result contains Chinese explanatory text. Please retry.');
+  }
   return result;
 }
 
@@ -112,6 +140,18 @@ function positiveInteger(value: unknown, field: string): number | undefined {
   if (value === undefined) return undefined;
   if (!Number.isSafeInteger(value) || (value as number) < 1 || (value as number) > 1_000_000) throw new Error(`收藏的 ${field} 无效。`);
   return value as number;
+}
+
+export function normalizePdfAnchor(value: unknown): PdfAnchor | undefined {
+  if (value === undefined) return;
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('PDF 定位信息无效。');
+  const input = value as Record<string, unknown>;
+  const integer = (key: string) => { const number = input[key]; if (!Number.isSafeInteger(number) || (number as number) < 0 || (number as number) > 2_000_000) throw new Error('PDF 定位偏移无效。'); return number as number; };
+  if (input.version !== 1) throw new Error('PDF 定位版本无效。');
+  const start = integer('start'), end = integer('end'), selectionStart = integer('selectionStart'), selectionEnd = integer('selectionEnd');
+  const quote = requiredItemText(input, 'quote', 5000), prefix = optionalItemText(input, 'prefix', 60) ?? '', suffix = optionalItemText(input, 'suffix', 60) ?? '';
+  if (end <= start || end - start !== quote.length || selectionEnd <= selectionStart || selectionStart < start || selectionEnd > end) throw new Error('PDF 定位范围无效。');
+  return { version: 1, start, end, quote, prefix, suffix, selectionStart, selectionEnd };
 }
 
 function sourceFields(input: Record<string, unknown>) {
@@ -152,6 +192,9 @@ export function normalizeFavoriteQuery(value: unknown): FavoriteInput {
     sourceSentence: optionalItemText(input, 'sourceSentence', MAX_CONTEXT),
     mode: isReadingMode(input.mode) ? input.mode : undefined,
     lemma: optionalItemText(input, 'lemma', 200),
+    explanationLanguage: normalizeSavedLanguage(input.explanationLanguage),
+    sourcePosition: optionalItemText(input, 'sourcePosition', 1000),
+    ...explanationExtras(input),
     documentId,
     pageNumber
   };
@@ -171,15 +214,20 @@ export function normalizeFavoriteItem(value: unknown): ReaderItem {
     sourceUrl,
     sourceTitle: optionalItemText(input, 'sourceTitle', 2_000) ?? '',
     createdAt: 0,
-    definition: requiredItemText(input, 'definition'),
+    definition: optionalItemText(input, 'definition') ?? '',
     translation: requiredItemText(input, 'translation'),
-    explanation: requiredItemText(input, 'explanation'),
+    explanation: optionalItemText(input, 'explanation') ?? '',
     examples: itemStringList(input, 'examples', 5) ?? [],
     mode,
     kind: collectionKind({ mode, selectedText: text }),
     documentId,
     pageNumber
   };
+  item.explanationLanguage = normalizeSavedLanguage(input.explanationLanguage);
+  item.pdfAnchor = normalizePdfAnchor(input.pdfAnchor);
+  if (item.pdfAnchor && !documentId) throw new Error('只有 PDF 收藏可以包含 PDF 定位。');
+  Object.assign(item, explanationExtras(input));
+  if ((mode === 'word' || mode === 'phrase') && !item.definition.trim()) throw new Error('收藏缺少 definition。');
   const optional: Array<[keyof ReaderItem, string, number]> = [
     ['lemma', 'lemma', 200],
     ['partOfSpeech', 'partOfSpeech', 100],
@@ -188,6 +236,7 @@ export function normalizeFavoriteItem(value: unknown): ReaderItem {
     ['sourceSentence', 'sourceSentence', MAX_CONTEXT],
     ['register', 'register', 100],
     ['note', 'note', 2_000]
+    ,['sourcePosition', 'sourcePosition', 1000]
   ];
   for (const [field, key, max] of optional) {
     const entry = optionalItemText(input, key, max);

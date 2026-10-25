@@ -36,6 +36,19 @@ The result is a compact card, not a full dictionary page.
 
 ## Features
 
+### What's new in 0.9.2
+
+- Improve PDF column reading order, dictionary-confirmed line-break word joining, and adjacent-page context completion.
+- Preserve reading position and selection after zoom; highlight saved sentences and words when returning to a PDF source.
+- Keep page navigation keys working while explanations are open; editable fields retain normal keyboard behavior.
+- See the [changelog](CHANGELOG.md) for version details and included 0.9.0 updates.
+
+- Switch Chinese/English explanations on each card. English uses offline English definitions, contextual meanings and plain-English paraphrases.
+- Meaning bridges and fixed-expression detection work in both languages, with a word-only override.
+- Save language variants under one library entry and one review schedule; compare saved versions in expanded detail.
+- Reading cards omit source text and provenance; saved-context detail retains them. Source data remains in backups and exports.
+- Database v6 preserves old records and marks unrecorded historical languages as unconfirmed. Back up before upgrading; v0.8.x cannot open the upgraded database.
+
 ### Context-aware explanations
 
 - Word, phrase, sentence, and paragraph selections.
@@ -47,7 +60,7 @@ The result is a compact card, not a full dictionary page.
 ### Local-first dictionary
 
 - A bundled 20,000-word ECDICT subset for common words.
-- Chinese glosses, IPA, and part-of-speech data.
+- Chinese glosses, English definitions (19,761 entries), IPA, and part-of-speech data.
 - Multi-POS entries are grouped by part of speech.
 - Common heteronyms show pronunciation by sense.
 - If a word is not in the local dictionary, the AI definition is used as a fallback.

@@ -3,7 +3,7 @@ import { expect, it, vi } from 'vitest';
 import { Workbench } from '../src/Workbench';
 import type { CollectionKind, ReaderItem } from '../src/types';
 import { DEFAULT_PREFERENCES } from '../src/preferences';
-import { favoriteKey } from '../src/library';
+import { libraryGroupKey as favoriteKey } from '../src/library';
 
 const state = vi.hoisted(() => ({ values: [] as unknown[] }));
 vi.mock('react', async (original) => ({
@@ -77,7 +77,7 @@ it('keeps source information inside the native inline accordion and exports from
   expect(markup).toContain('标记为已掌握');
   expect(markup).toContain('aria-label="排序"');
   expect(markup).toContain('语境义');
-  expect(markup).toContain('删除这条语境');
+  expect(markup).toContain('删除此解释版本');
   expect(markup).toContain('删除整个词条');
 });
 

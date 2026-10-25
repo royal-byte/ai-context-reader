@@ -11,8 +11,5 @@ work/
 outputs/
 *.log
 
-# Local release history; keep it out of the open-source page
-CHANGELOG.md
-
 # Internal product planning; keep it local
 PRD.md

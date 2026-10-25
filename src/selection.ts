@@ -1,4 +1,4 @@
-import { cleanSelection, MAX_CONTEXT_SOURCE, minimalContext } from './reading';
+import { cleanSelection, MAX_CONTEXT_SOURCE, minimalContext, sentenceSegments } from './reading';
 import { contextPacketForText } from './context';
 import type { ContextKind, ContextPacket } from './types';
 
@@ -66,6 +66,22 @@ function startInBlock(block: Element, range: Range) {
     before.setEnd(range.startContainer, range.startOffset);
     return cleanSelection(before.toString()).length;
   } catch { return 0; }
+}
+
+/** Position of the enclosing sentence, shared by different words and languages. */
+export function sourcePositionForRange(range: Range) {
+  const block = closestBlock(range.startContainer);
+  if (!block) return undefined;
+  const path: number[] = [];
+  for (let element: Element | null = block; element?.parentElement; element = element.parentElement) {
+    path.unshift(Array.from(element.parentElement.children).indexOf(element));
+  }
+  const all = cleanSelection(block.textContent ?? '');
+  const before = startInBlock(block, range);
+  const found = all.indexOf(cleanSelection(range.toString()), Math.max(0, before - 1));
+  const start = found < 0 ? before : found;
+  const sentence = sentenceSegments(all).find((segment) => segment.index <= start && segment.index + segment.segment.length > start);
+  return `${path.join('.')}:${sentence?.index ?? start}`;
 }
 
 /** Structured, bounded context for the model; separate from the legacy context string. */

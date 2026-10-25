@@ -4,11 +4,11 @@ import workerUrl from 'pdfjs-dist/build/pdf.worker.mjs?url';
 import { readerDb, restoreItems, deleteFavoriteContext, deleteFavoriteTerm, clearQueryHistory, deleteReadingDocument, reviewTerm, restoreReview } from './db';
 import { MAX_BACKUP_BYTES, MAX_BACKUP_RECORDS, parseBackup, planRestore } from './backup';
 import { rememberDocument } from './documents';
-import { clampPage, collectionKind, contextKey, favoriteKey, formatPartOfSpeech, groupFavorites, relatedVocabulary } from './library';
+import { clampPage, collectionKind, contextKey, libraryGroupKey as favoriteKey, reviewKey, savedLanguage, itemTerm, formatPartOfSpeech, groupFavorites, relatedVocabulary } from './library';
 import { stripDefinitionPos } from './dictionary';
 import { PdfPage } from './PdfPage';
 import { ReaderCard, type ReadingSelection } from './ReaderCard';
-import { SavedContext } from './SavedContext';
+import { SavedVariants } from './SavedContext';
 import { SelectionReader, selectionIntent, opensImmediately } from './SelectionReader';
 import { ReviewPage } from './ReviewPage';
 import { EpubPage } from './EpubPage';
@@ -17,11 +17,11 @@ import { PdfOutline, type PdfOutlineItem } from './PdfOutline';
 import type { CollectionKind, LearningStatus, ReaderItem, ReadingDocument, QueryHistory, ContextPacket } from './types';
 import { cleanSelection, MAX_SELECTION_LENGTH } from './reading';
 import { isEditableTarget, loadPreferences, matchesReaderShortcut, uiText, useReaderPreferences } from './preferences';
-import { contextForRange, contextPacketForRange, windowContext } from './selection';
-import { contextPacketForText } from './context';
+import { contextForRange, contextPacketForRange, sourcePositionForRange } from './selection';
 import { toAnkiTsv, toCsv } from './export';
 import { isLikelyEnglish } from './language';
 import { dueReviewQueue, type ReviewRating, type ReviewSnapshot } from './srs';
+import { completePdfContext, pdfSelection, restorePdfSelection } from './pdf-text';
 
 // Settings are rarely used; load the form on demand instead of the PDF first paint.
 const SettingsForm = lazy(() => import('./SettingsForm').then((module) => ({ default: module.SettingsForm })));
@@ -63,6 +63,10 @@ export function Workbench() {
   const [restoreBusy, setRestoreBusy] = useState(false);
   const [sort, setSort] = useState<'recent' | 'alpha' | 'status'>('recent');
   const [reviewSession, setReviewSession] = useState(0);
+  const [languageFilter, setLanguageFilter] = useState('all');
+  const [sourceFocus, setSourceFocus] = useState<{ item: ReaderItem; token: number }>();
+  const captureSerial = useRef(0);
+  useEffect(() => { captureSerial.current++; }, [pdf, page, view]);
   const t = uiText(preferences.uiLanguage);
   const statusLabels: Record<LearningStatus, string> = { new: t('新词', 'New'), reviewing: t('复习', 'Review'), mastered: t('已掌握', 'Mastered') };
   const input = useRef<HTMLInputElement>(null);
@@ -182,7 +186,6 @@ export function Workbench() {
     observer.observe(element); return () => observer.disconnect();
   }, [view, pdf, epub]);
   useEffect(() => {
-    setPick(undefined); setExplaining(undefined);
     if (!document || !ready || !preferences.saveReadingProgress) return;
     let active = true;
     // Page turns used to re-read every document and 200 queries. Debounce the
@@ -195,6 +198,7 @@ export function Workbench() {
     }, 300);
     return () => { active = false; clearTimeout(timer); };
   }, [document, page, zoom, ready, preferences.saveReadingProgress]);
+  useEffect(() => { setPick(undefined); setExplaining(undefined); }, [document, page]);
 
   useEffect(() => { setPick(undefined); setExplaining(undefined); }, [preferences]);
   useEffect(() => {
@@ -208,7 +212,7 @@ export function Workbench() {
   useEffect(() => {
     if (!ready || settingsOpen || view !== 'reading' || !document || pageCount <= 1) return;
     const keydown = (event: KeyboardEvent) => {
-      if (pick || explaining || isEditableTarget(event.target) || event.altKey || event.ctrlKey || event.metaKey) return;
+      if (isEditableTarget(event.target) || event.altKey || event.ctrlKey || event.metaKey) return;
       let next: number | undefined;
       if (event.key === 'ArrowRight' || event.key === 'PageDown') next = page + 1;
       else if (event.key === 'ArrowLeft' || event.key === 'PageUp') next = page - 1;
@@ -220,7 +224,7 @@ export function Workbench() {
     };
     window.document.addEventListener('keydown', keydown);
     return () => window.document.removeEventListener('keydown', keydown);
-  }, [ready, settingsOpen, view, document, page, pageCount, pick, explaining]);
+  }, [ready, settingsOpen, view, document, page, pageCount]);
 
   const explain = (selection: ReadingSelection) => {
     setPick(undefined); setExplaining(selection); setSideTab('explanation'); setSideOpen(true);
@@ -236,27 +240,39 @@ export function Workbench() {
     if (!paper?.contains(range.startContainer) || !paper.contains(range.endContainer)) return false;
     const text = cleanSelection(selected.toString());
     if (!text) return false;
+    if (pdf && document.kind !== 'epub') {
+      const captured = pdfSelection(paper as HTMLElement, range, intent === 'explain');
+      if (!captured) return false;
+      if (preferences.englishOnly && !isLikelyEnglish(captured.text)) return false;
+      const serial = ++captureSerial.current;
+      const original = range.cloneRange();
+      setSourceFocus(undefined);
+      void completePdfContext(pdf, page, captured).then((result) => {
+        if (serial !== captureSerial.current || !paper.contains(original.startContainer) || !paper.contains(original.endContainer)) return;
+        const current = window.getSelection();
+        if (!current?.rangeCount || current.isCollapsed) return;
+        const currentRange = current.getRangeAt(0);
+        if (currentRange.startContainer !== original.startContainer || currentRange.startOffset !== original.startOffset || currentRange.endContainer !== original.endContainer || currentRange.endOffset !== original.endOffset) return;
+        if (intent === 'explain') restorePdfSelection(paper as HTMLElement, result.pdfAnchor);
+        const rect = original.getBoundingClientRect();
+        const selection: Pick = { text: result.text, context: result.context, packet: result.packet, pdfAnchor: result.pdfAnchor, sourcePosition: result.sourcePosition, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
+        if (opensImmediately(selection.text, selection.immediate, confirmed, preferences)) explain(selection);
+        else setPick(selection);
+      }).catch(() => { if (serial === captureSerial.current) setNotice(t('选区无法可靠读取，请重新选择文字。', 'Could not reliably read this selection. Please select it again.')); });
+      return true;
+    }
     if (preferences.englishOnly && !isLikelyEnglish(text)) return false;
     let context = '';
+    let sourcePosition = sourcePositionForRange(range);
     let packet: ContextPacket | undefined;
     if (text.length <= MAX_SELECTION_LENGTH) {
       if (document.kind === 'epub') {
         packet = contextPacketForRange(range, text, 'epub', epub?.chapters[page - 1]?.title);
         context = packet.sentence || contextForRange(range, text).context;
-      } else {
-        const all = (paper as HTMLElement).dataset.pageText ?? text;
-        const spans = [...paper.querySelectorAll('.textLayer span')];
-        const startSpan = (range.startContainer.nodeType === Node.ELEMENT_NODE ? range.startContainer as Element : range.startContainer.parentElement)?.closest('span');
-        const startSpanIndex = spans.findIndex((span) => span === startSpan);
-        const prefixLength = startSpanIndex < 0 ? 0 : spans.slice(0, startSpanIndex).map((span) => span.textContent ?? '').join(' ').length;
-        let index = all.indexOf(text, Math.max(0, prefixLength - 1));
-        if (index < 0) index = all.indexOf(text);
-        packet = contextPacketForText(text, all, index, 'pdf');
-        context = packet.sentence || windowContext(all, text, index).context;
       }
     }
     const rect = range.getBoundingClientRect();
-    const selection = { text, context, packet, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
+    const selection = { text, context, packet, sourcePosition, sourceTitle: document.name, sourceUrl: `local-pdf:${document.id}`, documentId: document.id, pageNumber: page, anchor: { left: rect.left, bottom: rect.bottom }, immediate: intent === 'explain', confirmed };
     if (opensImmediately(text, selection.immediate, confirmed, preferences)) explain(selection);
     else setPick(selection);
     return true;
@@ -274,7 +290,7 @@ export function Workbench() {
     if (!item.id) return;
     try {
       await readerDb.transaction('rw', readerDb.items, async () => {
-        await readerDb.items.where('termKey').equals(favoriteKey(item)).modify((record) => { record.status = value; });
+        await readerDb.items.where('termKey').equals(reviewKey(item)).modify((record) => { record.status = value; });
       });
       await refreshLibrary();
     }
@@ -282,7 +298,7 @@ export function Workbench() {
   };
   const rateReview = async (item: ReaderItem, rating: ReviewRating) => {
     try {
-      const schedule = await reviewTerm(favoriteKey(item), rating);
+      const schedule = await reviewTerm(reviewKey(item), rating);
       await refreshLibrary();
       return schedule;
     } catch (error) {
@@ -292,7 +308,7 @@ export function Workbench() {
   };
   const undoReview = async (item: ReaderItem, snapshot: ReviewSnapshot) => {
     try {
-      await restoreReview(favoriteKey(item), snapshot);
+      await restoreReview(reviewKey(item), snapshot);
       await refreshLibrary();
     } catch (error) {
       setNotice(t('撤销失败，请重试。', 'Could not undo. Please retry.'));
@@ -301,11 +317,13 @@ export function Workbench() {
   };
   const returnToSource = async (item: ReaderItem) => {
     if (item.documentId === document?.id && (pdf || epub)) {
+      if (pdf) setSourceFocus({ item, token: performance.now() });
+      setExplaining(undefined);
       setPage(clampPage(item.pageNumber ?? 1, pageCount)); setView('reading'); setPick(undefined); return;
     }
     if (item.documentId) {
       const metadata = await readerDb.documents.get(item.documentId);
-      if (metadata) await reopen({ ...metadata, currentPage: item.pageNumber ?? 1 });
+      if (metadata) { await reopen({ ...metadata, currentPage: item.pageNumber ?? 1 }); if (metadata.kind !== 'epub') setSourceFocus({ item, token: performance.now() }); }
       else setNotice(t("找不到原文文档，请重新打开该文件。", "Original document not found. Please reopen it."));
     } else if (/^https?:\/\//.test(item.sourceUrl)) await chrome.tabs.create({ url: item.sourceUrl });
     else setNotice(t("这是一条旧的本地记录，请从阅读历史重新打开原文。", "This is an older local record. Reopen the original from history."));
@@ -328,7 +346,12 @@ export function Workbench() {
       : t('删除整组摘录？此操作不可撤销。', 'Delete this group of excerpts? This cannot be undone.');
     if (!window.confirm(message)) return;
     try {
-      await deleteFavoriteTerm(favoriteKey(item));
+      if (collectionKind(item) === 'excerpt') {
+        await readerDb.transaction('rw', readerDb.items, async () => {
+          const ids = items.filter((record) => favoriteKey(record) === favoriteKey(item)).flatMap((record) => record.id === undefined ? [] : [record.id]);
+          await readerDb.items.bulkDelete(ids);
+        });
+      } else await deleteFavoriteTerm(reviewKey(item));
       setRelatedFor(undefined);
       await refreshLibrary();
       await chrome.storage.local.set({ 'library-updated': Date.now() });
@@ -354,8 +377,8 @@ export function Workbench() {
     } catch { setNotice(t('删除失败，请重试。', 'Could not delete. Please retry.')); }
   };
   const scopedRecords = useMemo(() => items.filter((item) => view === 'library' || scope === 'all' || !document || item.documentId === document.id), [items, view, scope, document]);
-  const reviewData = useMemo(() => dueReviewQueue(items, Date.now(), preferences.reviewNewPerDay, preferences.reviewDuePerDay), [items, preferences.reviewNewPerDay, preferences.reviewDuePerDay]);
-  const scopedItems = useMemo(() => groupFavorites(scopedRecords), [scopedRecords]);
+  const reviewData = useMemo(() => dueReviewQueue(items, Date.now(), preferences.reviewNewPerDay, preferences.reviewDuePerDay, preferences.explanationLanguage), [items, preferences.reviewNewPerDay, preferences.reviewDuePerDay, preferences.explanationLanguage]);
+  const scopedItems = useMemo(() => groupFavorites(scopedRecords.filter((item) => languageFilter === 'all' || savedLanguage(item) === languageFilter), preferences.explanationLanguage), [scopedRecords, languageFilter, preferences.explanationLanguage]);
   const relatedItem = useMemo(() => scopedItems.find((item) => favoriteKey(item) === relatedFor), [scopedItems, relatedFor]);
   const related = useMemo(() => relatedItem ? relatedVocabulary(relatedItem, scopedRecords) : [], [relatedItem, scopedRecords]);
   const revealRelated = (item: ReaderItem) => {
@@ -380,7 +403,7 @@ export function Workbench() {
       return b.createdAt - a.createdAt;
     });
   }, [scopedItems, kind, status, query, sort, preferences.uiLanguage]);
-  const hasFilter = Boolean(query.trim()) || (kind === 'vocabulary' && status !== 'all');
+  const hasFilter = Boolean(query.trim()) || languageFilter !== 'all' || (kind === 'vocabulary' && status !== 'all');
   const downloadItems = (records: ReaderItem[], filename: string) => {
     try {
       const blob = new Blob([JSON.stringify(records.map((item) => ({ ...item, kind: collectionKind(item), partOfSpeech: formatPartOfSpeech(item.partOfSpeech) || undefined })), null, 2)], { type: 'application/json' });
@@ -443,16 +466,18 @@ export function Workbench() {
     <div className="collection-tabs" role="group" aria-label={t("收藏类别", "Collection type")}><button aria-pressed={kind === 'vocabulary'} onClick={() => { setKind('vocabulary'); setStatus('all'); }}>{t('生词库', 'Vocabulary')} <span>{vocabularyCounts.all}</span></button><button aria-pressed={kind === 'excerpt'} onClick={() => { setKind('excerpt'); setStatus('all'); }}>{t('摘录', 'Excerpts')} <span>{scopedItems.filter((item) => collectionKind(item) === 'excerpt').length}</span></button></div>
     {view === 'reading' && <select className="scope-select" aria-label={t("收藏范围", "Collection scope")} value={document ? scope : 'all'} onChange={(event) => setScope(event.target.value)}><option value="document" disabled={!document}>{t('当前文档', 'This document')}</option><option value="all">{t('全部收藏', 'All favorites')}</option></select>}
     <input className="library-search" aria-label={t("搜索收藏", "Search favorites")} placeholder={t("搜索词条或释义", "Search words or meanings")} value={query} onChange={(event) => setQuery(event.target.value)} />
+    <select aria-label={t('解释语言筛选', 'Filter explanation language')} value={languageFilter} onChange={(event) => setLanguageFilter(event.target.value)}><option value="all">{t('全部语言', 'All languages')}</option><option value="zh-CN">中文</option><option value="en">English</option></select>
     <select className="sort-select" aria-label={t("排序", "Sort")} value={sort} onChange={(event) => setSort(event.target.value as 'recent' | 'alpha' | 'status')}><option value="recent">{t('最近', 'Recent')}</option><option value="alpha">{t('字母', 'A–Z')}</option><option value="status">{t('学习状态', 'Status')}</option></select>
     </div>
     {kind === 'vocabulary' && <div className="status-tabs" aria-label={t("学习状态筛选", "Learning status")}>{(['all', 'new', 'reviewing', 'mastered'] as const).map((value) => <button key={value} aria-pressed={status === value} onClick={() => setStatus(value)}>{value === 'all' ? t("全部", "All") : statusLabels[value]} <span>{vocabularyCounts[value]}</span></button>)}</div>}
     </div>
     <div className={`collection-list ${kind}-list`}>{filtered.length ? filtered.map((item) => <article className="collection-item" key={item.id}>
       <details className="collection-accordion" name="reader-collection" data-term-key={favoriteKey(item)} onToggle={(event) => { if (event.target !== event.currentTarget) return; const key = favoriteKey(item); if (event.currentTarget.open) setRelatedFor(key); else setRelatedFor((current) => current === key ? undefined : current); }}>
-        <summary className="item-summary">{kind === 'vocabulary' && <span className={`item-dot ${item.status ?? 'new'}`} aria-hidden="true" />}<span className="item-copy"><span className={kind === 'vocabulary' ? 'item-word' : 'item-excerpt'}>{kind === 'vocabulary' ? (item.lemma || item.selectedText) : item.selectedText}</span>{kind === 'vocabulary' && item.phonetic && <span className="item-phonetic">{item.phonetic}</span>}<span className="item-definition">{item.partOfSpeech && kind === 'vocabulary' ? `${formatPartOfSpeech(item.partOfSpeech)} ` : ''}{kind === 'excerpt' ? item.translation || item.definition : stripDefinitionPos(item.definition)}</span>{kind === 'vocabulary' && <span className={`status-badge ${item.status ?? 'new'}`}>{statusLabels[item.status ?? 'new']}</span>}</span><span className="item-chevron" aria-hidden="true">⌄</span></summary>
+        <summary className="item-summary">{kind === 'vocabulary' && <span className={`item-dot ${item.status ?? 'new'}`} aria-hidden="true" />}<span className="item-copy"><span className={kind === 'vocabulary' ? 'item-word' : 'item-excerpt'}>{kind === 'vocabulary' ? itemTerm(item) : item.selectedText}</span>{kind === 'vocabulary' && item.phonetic && <span className="item-phonetic">{item.phonetic}</span>}<span className="item-definition">{item.partOfSpeech && kind === 'vocabulary' ? `${formatPartOfSpeech(item.partOfSpeech)} ` : ''}{kind === 'excerpt' ? item.translation || item.definition : stripDefinitionPos(item.definition)}</span>{kind === 'vocabulary' && <span className={`status-badge ${item.status ?? 'new'}`}>{statusLabels[item.status ?? 'new']}</span>}</span><span className="language-badges">{[...new Set(item.contexts.map(savedLanguage))].filter((value) => value !== 'unknown').map((value) => <span key={value}>{value === 'en' ? 'EN' : '中'}</span>)}</span><span className="item-chevron" aria-hidden="true">⌄</span></summary>
         <div className="inline-detail">
           {kind === 'vocabulary' && relatedFor === favoriteKey(item) && <section className="related-vocabulary" aria-label={t('相关词汇', 'Related vocabulary')}><h3>{t('与你的阅读有关', 'Connected by your reading')}</h3><p className="related-caption">{t('仅依据已收藏语境，不代表通用搭配或同一专业主题。', 'Based on saved contexts, not general collocations or a shared specialist topic.')}</p>{related.length ? <ul>{related.slice(0, 5).map((entry) => <li key={favoriteKey(entry.item)}><div className="related-heading"><button className="related-word" onClick={() => revealRelated(entry.item)} aria-label={`${t('查看词条', 'View word')} ${entry.label}`}>{entry.label}</button><span className={entry.shared.length ? 'relation-shared' : 'relation-source'}>{entry.shared.length ? t(`共同原句 ${entry.shared.length}`, `${entry.shared.length} shared sentences`) : t('同一来源', 'Same source')}</span></div><p className="related-definition">{formatPartOfSpeech(entry.item.partOfSpeech)} {stripDefinitionPos(entry.item.definition)}</p><details className="related-evidence"><summary>{t('查看依据', 'Show evidence')}{entry.shared.length > 3 ? t('（展示前 3 条）', ' (first 3)') : ''}</summary>{!entry.shared.length && <p className="related-caption">{t('仅来自同一文章或 PDF，不表示在同一句出现。以下为两个词各自的收藏原句。', 'Saved from the same article or PDF, not necessarily the same sentence. The words’ saved sentences are shown below.')}</p>}{(entry.shared.length ? entry.shared.slice(0, 3) : entry.sourceExample).map((evidence, index) => <div className="relation-proof" key={`${contextKey(evidence)}-${index}`}><blockquote>{evidence.sourceSentence || evidence.context}</blockquote><p className="item-source">{evidence.sourceTitle || t('未命名来源', 'Untitled source')}{evidence.pageNumber ? ` · ${t('页码', 'Page')} ${evidence.pageNumber}` : ''}</p><button className="relation-source-link" onClick={() => { void returnToSource(evidence).catch(() => setNotice(t('打开原文失败，请重试。', 'Could not open the source. Please retry.'))); }}>{t('回到原文 ↗', 'Open source ↗')}</button></div>)}</details></li>)}</ul> : <p className="related-empty">{t('暂未找到有依据的相关词。收藏更多词语与原句后，再来看看。', 'No evidence-backed connections yet. Save more words and sentences, then check again.')}</p>}{related.length > 5 && <p className="related-caption">{t('先展示关联最强的 5 个词条。', 'Showing the 5 strongest connections.')}</p>}</section>}
-          {item.contexts.length > 1 && <p className="context-count">{t('已保存语境', 'Saved contexts')} · {item.contexts.length}</p>}{item.contexts.map((context) => <SavedContext key={context.id} context={context} kind={kind} t={t} onReturn={openSource} onDelete={(entry) => { void removeContext(entry); }} />)}<div className="detail-actions"><button onClick={(event) => { const accordion = event.currentTarget.closest('details'); if (accordion) { accordion.open = false; accordion.querySelector('summary')?.focus(); } }}>{t('收起', 'Collapse')}</button><button className="quiet-danger" onClick={() => { void removeTerm(item); }}>{kind === 'vocabulary' ? t('删除整个词条', 'Delete this word') : t('删除整组摘录', 'Delete this group')}</button></div></div>
+          <div className="language-badges">{[...new Set(item.contexts.map(savedLanguage))].filter((language) => language !== 'unknown').map((language) => <span key={language}>{language === 'en' ? 'EN' : '中'}</span>)}</div>
+          {item.contexts.length > 1 && <p className="context-count">{t('已保存语境', 'Saved contexts')} · {new Set(item.contexts.map(contextKey)).size}</p>}<SavedVariants contexts={item.contexts} kind={kind} t={t} preferredLanguage={preferences.explanationLanguage} onReturn={openSource} onDelete={(entry) => { void removeContext(entry); }} /><div className="detail-actions"><button onClick={(event) => { const accordion = event.currentTarget.closest('details'); if (accordion) { accordion.open = false; accordion.querySelector('summary')?.focus(); } }}>{t('收起', 'Collapse')}</button><button className="quiet-danger" onClick={() => { void removeTerm(item); }}>{kind === 'vocabulary' ? t('删除整个词条', 'Delete this word') : t('删除整组摘录', 'Delete this group')}</button></div></div>
       </details>
       {kind === 'vocabulary' && <><button className="item-more" aria-label={`${item.lemma || item.selectedText} ${t('的更多操作', 'actions')}`} popoverTarget={`item-menu-${view}-${item.id}`} onClick={(event) => { const menu = event.currentTarget.nextElementSibling as HTMLElement; const rect = event.currentTarget.getBoundingClientRect(); menu.style.left = `${Math.max(12, Math.min(rect.right - 208, window.innerWidth - 220))}px`; menu.style.top = `${Math.max(12, Math.min(rect.bottom + 6, window.innerHeight - 236))}px`; }}>···</button><div id={`item-menu-${view}-${item.id}`} className="item-menu" popover="auto" role="group" aria-label={`${item.lemma || item.selectedText} ${t('的学习状态', 'learning status')}`}><p>{t('学习状态 · 手动管理', 'Learning status · Manual')}</p>{(Object.entries(statusLabels) as [LearningStatus, string][]).map(([value, label]) => <button key={value} aria-pressed={(item.status ?? 'new') === value} onClick={(event) => { event.currentTarget.closest<HTMLElement>('[popover]')?.hidePopover(); void updateStatus(item, value); }}>{t('标记为', 'Mark as ')}{label}</button>)}</div></>}
     </article>) : <div className="collection-empty"><span aria-hidden="true">{kind === 'vocabulary' ? 'Aa' : '❝'}</span><h3>{hasFilter ? t("没有匹配的收藏", "No matching favorites") : kind === 'vocabulary' ? t("还没有收藏的词语", "No vocabulary yet") : t("还没有收藏的摘录", "No excerpts yet")}</h3><p>{hasFilter ? t("试试其他关键词，或清除筛选查看全部。", "Try other keywords or clear the filters.") : kind === 'vocabulary' ? t("阅读时选中单词或短语，理解后加入收藏。", "Select a word or phrase while reading, then save it.") : t("阅读时选中句子或段落，把值得重读的话留在这里。", "Save sentences and paragraphs worth reading again.")}</p>{hasFilter ? <button className="empty-action" onClick={() => { setQuery(''); setStatus('all'); }}>{t('清除筛选', 'Clear filters')}</button> : view === 'library' && <button className="empty-action" onClick={() => go('reading')}>{t('去阅读', 'Go read')}</button>}</div>}</div>
@@ -472,7 +497,7 @@ export function Workbench() {
         {pdf && document && <div className="pdf-toolbar"><div className="page-control"><button aria-label={t("上一页", "Previous page")} disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>‹</button><form onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); setPage(clampPage(Number(data.get('page')), pdf.numPages)); }}><input key={page} name="page" aria-label={t("页码", "Page")} type="number" min="1" max={pdf.numPages} defaultValue={page} onBlur={(event) => setPage(clampPage(Number(event.target.value), pdf.numPages))} /><span>/ {pdf.numPages}</span></form><button aria-label={t("下一页", "Next page")} disabled={page >= pdf.numPages} onClick={() => setPage((value) => value + 1)}>›</button></div><select aria-label={t("缩放", "Zoom")} value={zoom} onChange={(event) => setZoom(event.target.value)}><option value="fit">{t('适应宽度', 'Fit width')}</option><option value="page">{t('适合页面', 'Fit page')}</option>{['0.75', '1', '1.25', '1.5', '2'].map((value) => <option key={value} value={value}>{Number(value) * 100}%</option>)}</select><PdfOutline items={outline} onJump={jumpToOutline} t={t} /><button className={`night-toggle${night ? ' active' : ''}`} aria-pressed={night} aria-label={t('夜间模式', 'Night mode')} onClick={() => setNight(!night)}>☾</button><span className="local-note">{t('本地 PDF · ←/→ 翻页 · 双击单词或拖选文字', 'Local PDF · ←/→ pages · Double-click a word or select text')}</span></div>}
         {epub && document && <div className="pdf-toolbar epub-toolbar"><div className="page-control"><button aria-label={t("上一章", "Previous chapter")} disabled={page <= 1} onClick={() => setPage((value) => clampPage(value - 1, pageCount))}>‹</button><select aria-label={t("章节", "Chapter")} value={page} onChange={(event) => setPage(Number(event.target.value))}>{epub.chapters.map((entry, index) => <option key={entry.id} value={index + 1}>{index + 1}. {entry.title}</option>)}</select><button aria-label={t("下一章", "Next chapter")} disabled={page >= pageCount} onClick={() => setPage((value) => clampPage(value + 1, pageCount))}>›</button></div><div className="epub-font-controls"><button aria-label={t("缩小字号", "Decrease font size")} onClick={() => setZoom(String(Math.max(70, epubFont - 10)))}>A−</button><span>{epubFont}%</span><button aria-label={t("放大字号", "Increase font size")} onClick={() => setZoom(String(Math.min(180, epubFont + 10)))}>A＋</button></div><button className={`night-toggle${night ? ' active' : ''}`} aria-pressed={night} aria-label={t('夜间模式', 'Night mode')} onClick={() => setNight(!night)}>☾</button><span className="local-note">{t('本地 EPUB · ←/→ 章节 · 双击或拖选文字', 'Local EPUB · ←/→ chapters · Select text')}</span></div>}
         <div className={`reading-viewport${night ? ' night' : ''}${fitPageMode ? ' fit-page' : ''}`} ref={viewport} onDragOver={(event) => event.preventDefault()} onDrop={drop}>
-          {pdf && document ? <PdfPage pdf={pdf} pageNumber={page} width={width} height={height} zoom={zoom} onSelect={capture} onError={setNotice} language={preferences.uiLanguage} /> : chapter && document ? <EpubPage chapter={chapter} fontSize={epubFont} onSelect={capture} /> : <div className="reading-empty"><span className="empty-book" aria-hidden="true">▤</span><p className="empty-eyebrow">READ. UNDERSTAND. REMEMBER.</p><h2>{t('把阅读，变成理解。', 'Read for understanding.')}</h2><p>{t('打开一份 PDF 或 EPUB，选中不懂的词。释义联系上下文，值得记住的内容留在身边。', 'Open a PDF or EPUB and select unfamiliar words. Understand them in context and save what matters.')}</p><button className="primary-button" onClick={() => input.current?.click()} disabled={busy}>{t('选择本地文档', 'Choose local document')}</button><span className="drop-hint">{t('也可以把文件拖到这里 · 支持 PDF 与 EPUB', 'Or drop a file here · PDF and EPUB supported')}</span><div className="onboarding-steps"><p>{t('第一次使用？三步开始', 'First time? Three steps')}</p><ol><li>{t('配置 AI 服务商与密钥', 'Connect an AI provider')}</li><li>{t('打开 PDF/EPUB，或在任意网页选中文字', 'Open a PDF/EPUB, or select text on any page')}</li><li>{t('保存生词或摘录，随时回看', 'Save words or excerpts to revisit')}</li></ol><button className="onboarding-cta" onClick={() => setSettingsOpen(true)}>{t('配置 AI 模型', 'Configure AI')}</button></div>{history[0] && <button className="continue-button" onClick={() => { void reopen(history[0]!); }}>{t('继续阅读：', 'Continue: ')}{history[0].name} · {history[0].kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {history[0].currentPage} →</button>}</div>}
+          {pdf && document ? <PdfPage active={!settingsOpen} pdf={pdf} pageNumber={page} width={width} height={height} zoom={zoom} onSelect={capture} onError={setNotice} language={preferences.uiLanguage} highlight={sourceFocus?.item.documentId === document.id && (sourceFocus.item.pageNumber ?? 1) === page ? sourceFocus : undefined} onLocated={(found) => setNotice(found ? t('已定位并高亮原句。', 'Original sentence located and highlighted.') : t('已返回原页，但无法唯一定位原句。', 'Returned to the page, but the original sentence could not be located uniquely.'))} /> : chapter && document ? <EpubPage chapter={chapter} fontSize={epubFont} onSelect={capture} /> : <div className="reading-empty"><span className="empty-book" aria-hidden="true">▤</span><p className="empty-eyebrow">READ. UNDERSTAND. REMEMBER.</p><h2>{t('把阅读，变成理解。', 'Read for understanding.')}</h2><p>{t('打开一份 PDF 或 EPUB，选中不懂的词。释义联系上下文，值得记住的内容留在身边。', 'Open a PDF or EPUB and select unfamiliar words. Understand them in context and save what matters.')}</p><button className="primary-button" onClick={() => input.current?.click()} disabled={busy}>{t('选择本地文档', 'Choose local document')}</button><span className="drop-hint">{t('也可以把文件拖到这里 · 支持 PDF 与 EPUB', 'Or drop a file here · PDF and EPUB supported')}</span><div className="onboarding-steps"><p>{t('第一次使用？三步开始', 'First time? Three steps')}</p><ol><li>{t('配置 AI 服务商与密钥', 'Connect an AI provider')}</li><li>{t('打开 PDF/EPUB，或在任意网页选中文字', 'Open a PDF/EPUB, or select text on any page')}</li><li>{t('保存生词或摘录，随时回看', 'Save words or excerpts to revisit')}</li></ol><button className="onboarding-cta" onClick={() => setSettingsOpen(true)}>{t('配置 AI 模型', 'Configure AI')}</button></div>{history[0] && <button className="continue-button" onClick={() => { void reopen(history[0]!); }}>{t('继续阅读：', 'Continue: ')}{history[0].name} · {history[0].kind === 'epub' ? t('章节', 'Chapter') : t('页码', 'Page')} {history[0].currentPage} →</button>}</div>}
         </div>
       </>}
       {view === 'review' && <ReviewPage key={reviewSession} due={reviewData.due} dueCount={reviewData.dueCount} dueTotal={reviewData.dueTotal} newCount={reviewData.newCount} newTotal={reviewData.freshTotal} language={preferences.uiLanguage} t={t} onRate={rateReview} onUndo={undoReview} onOpen={openSource} onGoLibrary={() => go('library')} onRestart={() => setReviewSession((value) => value + 1)} />}
@@ -482,6 +507,6 @@ export function Workbench() {
       {settingsOpen && <div className="settings-page"><Suspense fallback={<p className="settings-loading" role="status">{t('正在加载设置…', 'Loading settings…')}</p>}><SettingsForm onSaved={(savedPreferences) => { returnFromSettings(); setNotice(uiText(savedPreferences.uiLanguage)('设置已保存，后续取词将使用新设置。', 'Settings saved. New queries will use these preferences.')); }} onCancel={returnFromSettings} /></Suspense></div>}
     </main>
     {view === 'reading' && <aside className="collection-sidebar" hidden={settingsOpen || !sideOpen}><div className="reader-side-tabs" role="group" aria-label={t('阅读侧栏', 'Reading sidebar')}><button aria-pressed={sideTab === 'explanation'} onClick={() => setSideTab('explanation')}>{t('解释', 'Explanation')}</button><button aria-pressed={sideTab === 'library'} onClick={() => setSideTab('library')}>{t('生词库', 'Library')}</button></div><div className="explanation-panel" hidden={sideTab !== 'explanation'}>{explaining ? <ReaderCard key={JSON.stringify(explaining)} presentation="panel" selection={explaining} preferences={preferences} close={() => { setExplaining(undefined); setSideTab('library'); }} onSaved={() => { void refreshLibrary().catch(() => setNotice(t('更新收藏列表失败，请刷新。', 'Could not refresh the library. Please reload.'))); }} /> : <div className="explanation-empty"><span aria-hidden="true">Aa</span><h2>{t('在原文中选词，理解它。', 'Select text to understand it.')}</h2><p>{t('双击单词直接解释；拖选后点击“解释”。仅复制不会发起查询。', 'Double-click a word, or select text and choose Explain. Copying alone sends no query.')}</p></div>}</div><div className="sidebar-library" hidden={sideTab !== 'library'}><header><h2>{kind === 'vocabulary' ? t('我的生词库', 'My vocabulary') : t('我的摘录', 'My excerpts')}</h2><p>{t('点击卡片展开详情', 'Expand a card for details')}</p></header>{collection}</div></aside>}
-    {pick && view === 'reading' && <SelectionReader key={`${pick.text}\n${pick.pageNumber}\n${pick.immediate}\n${pick.confirmed}`} selection={pick} anchor={pick.anchor} immediate={pick.immediate} confirmed={pick.confirmed} preferences={preferences} close={() => setPick(undefined)} onExplain={() => explain(pick)} />}
+    {pick && view === 'reading' && <SelectionReader key={`${pick.text}\n${pick.sourcePosition}\n${pick.pageNumber}\n${pick.immediate}\n${pick.confirmed}`} selection={pick} anchor={pick.anchor} immediate={pick.immediate} confirmed={pick.confirmed} preferences={preferences} close={() => setPick(undefined)} onExplain={() => explain(pick)} />}
   </div>;
 }

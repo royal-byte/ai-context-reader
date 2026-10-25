@@ -1,6 +1,6 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type { DocumentFile, ExplanationCache, ReaderItem, ReadingDocument, QueryHistory } from './types';
-import { collectionKind, contextKey, favoriteKey, formatPartOfSpeech, type FavoriteInput } from './library';
+import { collectionKind, contextKey, favoriteKey, reviewKey, savedLanguage, formatPartOfSpeech, type FavoriteInput } from './library';
 import { planRestore } from './backup';
 import { scheduleReview, type ReviewRating, type ReviewSnapshot } from './srs';
 
@@ -23,6 +23,27 @@ readerDb.version(4).stores({
   item.contextKey = contextKey(item);
 }));
 readerDb.version(5).stores({ explanations: 'key, createdAt' });
+export function migrateV6Item(item: ReaderItem) {
+  item.explanationLanguage = savedLanguage(item);
+  item.termKey = reviewKey(item);
+  item.contextKey = contextKey(item);
+  item.variantKey = favoriteKey(item);
+  item.uniqueKey = item.variantKey;
+}
+readerDb.version(6).stores({
+  items: '++id, uniqueKey, termKey, contextKey, variantKey, createdAt, sourceUrl, [termKey+contextKey]'
+}).upgrade(async (tx) => {
+  const seen = new Set<string>();
+  await tx.table<ReaderItem>('items').toCollection().modify((item) => {
+    migrateV6Item(item);
+    if (seen.has(item.variantKey!)) {
+      item.legacyVariantId = `v5:${item.id}`;
+      item.variantKey = favoriteKey(item);
+      item.uniqueKey = item.variantKey;
+    }
+    seen.add(item.variantKey!);
+  });
+});
 
 export async function recordQuery(query: QueryHistory) {
   await readerDb.transaction('rw', readerDb.queries, async () => {
@@ -33,37 +54,39 @@ export async function recordQuery(query: QueryHistory) {
 }
 
 export async function getFavoriteState(item: FavoriteInput) {
-  const term = favoriteKey(item);
+  const term = reviewKey(item);
   const context = contextKey(item);
   const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
-  if (sameTerm.some((saved) => (saved.contextKey ?? contextKey(saved)) === context)) return 'duplicate' as const;
-  return sameTerm.length ? 'context' as const : 'new' as const;
+  if (sameTerm.some((saved) => favoriteKey(saved) === favoriteKey(item))) return 'duplicate' as const;
+  return sameTerm.some((saved) => contextKey(saved) !== context) ? 'context' as const : 'new' as const;
 }
 
 export async function getFavoriteNote(item: FavoriteInput) {
-  const term = favoriteKey(item);
+  const term = reviewKey(item);
   const context = contextKey(item);
   const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
-  return sameTerm.find((saved) => (saved.contextKey ?? contextKey(saved)) === context)?.note;
+  return sameTerm.find((saved) => favoriteKey(saved) === favoriteKey(item) && contextKey(saved) === context)?.note;
 }
 
 function savedRecord(item: ReaderItem, existing?: ReaderItem, restore = false): ReaderItem {
   const kind = collectionKind(item);
   const { id: _id, ...record } = item;
-  const termKey = favoriteKey(item);
+  const termKey = reviewKey(item);
   const contextKeyValue = contextKey(item);
   const review = kind === 'vocabulary' ? {
-    dueAt: record.dueAt ?? existing?.dueAt,
-    intervalDays: record.intervalDays ?? existing?.intervalDays,
-    ease: record.ease ?? existing?.ease,
-    reviewCount: record.reviewCount ?? existing?.reviewCount,
-    lapseCount: record.lapseCount ?? existing?.lapseCount,
-    lastReviewedAt: record.lastReviewedAt ?? existing?.lastReviewedAt
+    dueAt: existing?.dueAt ?? record.dueAt,
+    intervalDays: existing?.intervalDays ?? record.intervalDays,
+    ease: existing?.ease ?? record.ease,
+    reviewCount: existing?.reviewCount ?? record.reviewCount,
+    lapseCount: existing?.lapseCount ?? record.lapseCount,
+    lastReviewedAt: existing?.lastReviewedAt ?? record.lastReviewedAt
   } : {};
   return {
     ...record,
     ...review,
-    uniqueKey: JSON.stringify([termKey, contextKeyValue]),
+    uniqueKey: favoriteKey(item),
+    variantKey: favoriteKey(item),
+    explanationLanguage: savedLanguage(item),
     termKey,
     contextKey: contextKeyValue,
     kind,
@@ -77,18 +100,23 @@ export async function restoreItems(incoming: ReaderItem[]) {
     const existing = await readerDb.items.toArray();
     const plan = planRestore(existing, incoming);
     const terms = new Map<string, ReaderItem>();
-    for (const item of existing) if (!terms.has(favoriteKey(item))) terms.set(favoriteKey(item), item);
-    if (plan.additions.length) await readerDb.items.bulkAdd(plan.additions.map((item) => savedRecord(item, terms.get(favoriteKey(item)), true)));
+    for (const item of existing) if (!terms.has(reviewKey(item)) || (item.lastReviewedAt ?? 0) > (terms.get(reviewKey(item))?.lastReviewedAt ?? 0)) terms.set(reviewKey(item), item);
+    if (plan.additions.length) await readerDb.items.bulkAdd(plan.additions.map((item) => {
+      const record = savedRecord(item, terms.get(reviewKey(item)), true);
+      if (!terms.has(reviewKey(item))) terms.set(reviewKey(item), record);
+      return record;
+    }));
     return { added: plan.additions.length, skipped: plan.skipped };
   });
 }
 
 export async function saveItem(item: ReaderItem) {
   return readerDb.transaction('rw', readerDb.items, async () => {
-    const term = favoriteKey(item);
+    const term = reviewKey(item);
     const context = contextKey(item);
     const sameTerm = await readerDb.items.where('termKey').equals(term).toArray();
-    const duplicate = sameTerm.find((saved) => (saved.contextKey ?? contextKey(saved)) === context);
+    sameTerm.sort((a, b) => (b.lastReviewedAt ?? 0) - (a.lastReviewedAt ?? 0));
+    const duplicate = sameTerm.find((saved) => favoriteKey(saved) === favoriteKey(item) && contextKey(saved) === context);
     if (duplicate?.id !== undefined) {
       if (item.note !== undefined) await readerDb.items.update(duplicate.id, { note: item.note });
       return { id: duplicate.id, outcome: 'duplicate' as const };
@@ -106,7 +134,8 @@ export async function reviewTerm(termKey: string, rating: ReviewRating, now = Da
   return readerDb.transaction('rw', readerDb.items, async () => {
     const records = await readerDb.items.where('termKey').equals(termKey).toArray();
     if (!records.length) throw new Error('词条不存在。 / Term not found.');
-    const schedule = scheduleReview(records[0]!, rating, now);
+    const latest = records.reduce((best, item) => (item.lastReviewedAt ?? 0) > (best.lastReviewedAt ?? 0) ? item : best);
+    const schedule = scheduleReview(latest, rating, now);
     for (const record of records) {
       if (record.id !== undefined) await readerDb.items.update(record.id, schedule);
     }

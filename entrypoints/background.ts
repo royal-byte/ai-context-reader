@@ -2,7 +2,7 @@ import { readerDb, saveItem, getFavoriteState, getFavoriteNote, recordQuery } fr
 import { requestExplanation } from '../src/api';
 import { demoExplanation, normalizeFavoriteItem, normalizeFavoriteQuery } from '../src/validation';
 import { normalizeApiSettings, SETTINGS_KEY } from '../src/api-settings';
-import type { Explanation } from '../src/types';
+import type { Explanation, SelectionMode } from '../src/types';
 import { inferReadingMode, isReadingMode, validateSelection } from '../src/reading';
 import { isLikelyEnglish } from '../src/language';
 import { loadPreferences, normalizePreferences, PREFERENCES_KEY, siteAllowed } from '../src/preferences';
@@ -82,6 +82,12 @@ export default defineBackground(() => {
           sendResponse({ ok: true, preferences: await loadPreferences() });
           return;
         }
+        if (message.type === 'open-settings') {
+          if (!fromReader(sender)) throw new Error('Untrusted sender.');
+          await chrome.tabs.create({ url: chrome.runtime.getURL('/options.html') });
+          sendResponse({ ok: true });
+          return;
+        }
         if (message.type === 'cancel') {
           const requestId = typeof message.requestId === 'string' ? message.requestId : '';
           pending.get(requestId)?.abort();
@@ -125,13 +131,15 @@ export default defineBackground(() => {
           if (preferences.englishOnly && !isLikelyEnglish(message.text)) throw new Error('当前设置为仅解释英文内容，可在设置中关闭。 / English selections only is enabled; turn it off in settings to explain other languages.');
           if (isContentPage(sender) && !siteAllowed(sender.url ?? '', preferences)) throw new Error('此站点未启用阅读助手，请检查设置。 / Reader is disabled on this site.');
           const config = await settings();
-          const mode = isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);
+          const language = message.explanationLanguage === 'en' || message.explanationLanguage === 'zh-CN' ? message.explanationLanguage : preferences.explanationLanguage;
+          const expressionPolicy = message.expressionPolicy === 'word' || message.expressionPolicy === 'expression' ? message.expressionPolicy : 'auto';
+          const mode: SelectionMode = expressionPolicy === 'word' ? 'word' : language === 'en' ? 'auto' : isReadingMode(message.mode) ? message.mode : inferReadingMode(message.text);
           const packet = normalizeContextPacket(message.packet, message.text, typeof message.context === 'string' ? message.context : '');
           const context = packet.sentence || packet.selection;
           const requestId = typeof message.requestId === 'string' ? message.requestId : '';
           const cacheable = Boolean(config.apiKey.trim());
           const cacheKey = cacheable
-            ? await explanationCacheKey({ endpoint: config.endpoint, model: config.model, mode, text: message.text, context: contextPacketCacheValue(packet), language: preferences.explanationLanguage })
+            ? await explanationCacheKey({ endpoint: config.endpoint, model: config.model, mode, text: message.text, context: contextPacketCacheValue(packet), language, expressionPolicy })
             : '';
           let cached: Explanation | undefined;
           try { cached = cacheKey ? await readCachedExplanation(cacheKey) : undefined; }
@@ -146,13 +154,16 @@ export default defineBackground(() => {
             if (requestId && controller) pending.set(requestId, controller);
             try {
               explanation = cacheable
-                ? await requestExplanation(config, message.text, context, mode, preferences.explanationLanguage, controller?.signal, packet)
-                : demoExplanation(message.text, context, mode, preferences.explanationLanguage);
+                ? await requestExplanation(config, message.text, context, mode, language, controller?.signal, packet, expressionPolicy)
+                : demoExplanation(message.text, context, inferReadingMode(message.text), language);
             } finally {
               if (requestId) pending.delete(requestId);
             }
           }
-          explanation = await ensureChineseDefinition(explanation, mode, message.text, preferences.explanationLanguage);
+          if (expressionPolicy === 'word') { delete explanation.expression; explanation.mode = 'word'; }
+          if (explanation.expression?.confidence === 'high') explanation.mode = 'phrase';
+          explanation = await ensureChineseDefinition(explanation, explanation.mode ?? mode, message.text, language);
+          explanation.explanationLanguage = language;
           if (!cachedHit && cacheKey) {
             try { await writeCachedExplanation(cacheKey, explanation); }
             catch { /* Cache write failure must not discard a valid explanation. */ }
@@ -166,7 +177,7 @@ export default defineBackground(() => {
               await chrome.storage.local.set({ 'query-history-updated': Date.now() });
             } catch { warning = '解释已取得，但查询历史保存失败，请检查本机存储。 / Explanation ready, but query history could not be saved. Check local storage.'; }
           }
-          sendResponse({ ok: true, explanation, warning, cached: cachedHit });
+          sendResponse({ ok: true, explanation: !cacheable && language === 'en' ? undefined : explanation, warning, cached: cachedHit, modelAvailable: cacheable });
           return;
         }
         if (message.type === 'favorite-state' || message.type === 'save') {
